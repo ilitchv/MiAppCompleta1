@@ -304,11 +304,16 @@ export const getTrackColorClasses = (trackIdOrName: string): string => {
 export const formatWinningResult = (result: WinningResult | undefined): string => {
     if (!result) return '—';
     
-    // Priority 1: If pick3/pick4 exist (USA style)
+    // Priority 1: If pick3 AND pick4 exist (Combined style)
+    if (result.pick3 && result.pick3.trim() && result.pick4 && result.pick4.trim()) {
+        return `${result.pick3} - ${result.pick4}`;
+    }
+
+    // Priority 2: Individual (fallback if one missing)
     if (result.pick4 && result.pick4.trim()) return result.pick4;
     if (result.pick3 && result.pick3.trim()) return result.pick3;
     
-    // Priority 2: Quiniela style (1st-2nd-3rd)
+    // Priority 3: Quiniela style (1st-2nd-3rd)
     if (result.first) {
         let str = result.first;
         if (result.second) str += `-${result.second}`;

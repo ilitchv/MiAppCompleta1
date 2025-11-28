@@ -1,30 +1,27 @@
 
 # Active Context
 
-## Estado Actual: SISTEMA DE ENTRADA DE CLASE MUNDIAL (INPUT MASTERY) & REFINAMIENTO DE ADMIN
+## Estado Actual: BEAST OFFICE STABILIZED (GOLD STANDARD)
 
-Hemos completado el desarrollo del sistema de entrada de datos (Frontend) y estamos en la fase final de pulido del **Admin Dashboard**.
+El usuario ha restaurado manualmente el **Admin Dashboard** a su versión "Beast Office" definitiva. Este estado se considera el "Gold Standard" de diseño y funcionalidad.
 
-### 🔴 PUNTO CRÍTICO (ATENCIÓN PARA LA SIGUIENTE SESIÓN)
-**Problema:** El botón **"SAVE ALL"** en la pestaña OCR del `AdminDashboard.tsx` **NO FUNCIONA**.
--   **Síntoma:** Al hacer clic, no guarda los registros en la base de datos local, aunque los botones individuales "Save" de cada fila **SÍ funcionan**.
--   **Diagnóstico:** Probablemente un error en la lógica de iteración, validación de `targetId` o manejo del estado dentro de la función `handleSaveAllOcrRows`.
--   **Instrucción Inmediata:** Al reiniciar, tu **ÚNICA** prioridad es depurar y reescribir la función `handleSaveAllOcrRows` para garantizar que itere sobre las filas pendientes (`status !== 'saved'`), valide que tengan un ID de lotería válido, y las guarde en `localDbService`.
-
-### 🌟 Logros Recientes (Hitos Confirmados)
-1.  **Unificación de Catálogo:** Se ha migrado toda la lógica de nombres e IDs de loterías a `RESULTS_CATALOG` en `constants.ts`. Ahora es la única fuente de verdad.
-2.  **Logos Dinámicos:** Implementado `LotteryLogos.tsx` con SVGs vectoriales para todas las loterías (USA y RD).
-3.  **Admin Dashboard (Visual):**
-    -   Pestaña de Ventas (Sales) con escáner QR funcional.
-    -   Pestaña de Resultados con tabla manual y borrado.
-    -   Pestaña OCR (Staging Table) visualmente completa.
-    -   Calculadora de Premios integrada y funcional.
-4.  **Magic Slate (Batch Edition):** Funcional en el lado del usuario.
+### 🔒 Elementos Críticos (NO MODIFICAR)
+1.  **Diseño "Beast Office":** Estética industrial/futurista, header "Admin Command Center", logo "BO".
+2.  **Sales Tab:** Toggle de cápsula ("Ticket View" / "Play Analysis") sin emojis. Escáner QR integrado.
+3.  **OCR Tab:**
+    *   **Motor Híbrido:** Botones explícitos para "Local (Fast)" y "AI (Smart)".
+    *   **Layout:** Altura dinámica que permite scroll de página completa (no confinado a `100vh`).
+    *   **Lógica:** Reglas de mapeo "Banker Logic" (State -> NY Eve, Horses -> Var Length) inyectadas en `geminiService` y `localOcrService`.
+4.  **Estructura:** Navegación por pestañas (Sales, Results, OCR, Payouts) preservada.
 
 ### 🎯 Enfoque Actual
-Reparar la funcionalidad de administración masiva ("Save All") para cerrar el ciclo de gestión de resultados.
+El código base está **CONGELADO** en cuanto a refactorización de UI existente.
+Estamos entrando en la fase de **Planificación de Wishlist**.
 
-### Pasos Siguientes (Roadmap Inmediato)
-1.  **CORREGIR BATCH SAVE:** Arreglar `handleSaveAllOcrRows` en `AdminDashboard`.
-2.  **Validación Final:** Asegurar que los resultados guardados aparezcan inmediatamente en el Dashboard de Resultados (Landing Page) y en la Pestaña de Resultados del Admin.
-3.  **Congelación:** Una vez arreglado esto, el sistema estará listo para despliegue o integración de pagos.
+### Pasos Siguientes
+1.  **Planificación:** Analizar y desglosar los ítems de la "Wishlist" del usuario.
+2.  **Implementación Modular:** Añadir nuevas funcionalidades sin alterar la estética o lógica "Beast Office" recuperada.
+
+### Notas Técnicas Recientes
+-   Se confirmó que el OCR local (Tesseract) y el OCR AI (Gemini) conviven en la interfaz.
+-   La tabla de "Staging" del OCR guarda correctamente los resultados en `localDbService` tras validación manual.

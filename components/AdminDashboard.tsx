@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { TicketData, WinningResult, PrizeTable, CalculationResult } from '../types';
 import { localDbService } from '../services/localDbService';
 import { DEFAULT_PRIZE_TABLE, GAME_RULES_TEXT, RESULTS_CATALOG } from '../constants';
 import { calculateWinnings } from '../utils/prizeCalculator';
-import { fileToBase64 } from '../utils/helpers';
+import { fileToBase64, formatWinningResult } from '../utils/helpers';
 import { interpretWinningResultsImage, interpretWinningResultsText } from '../services/geminiService';
+import { processLocalOcr } from '../services/localOcrService';
 import { useSound } from '../hooks/useSound';
 
 // Declare jsQR from global scope
@@ -22,8 +24,66 @@ interface OcrStagingRow {
     status: 'pending' | 'saved';
 }
 
+// --- TRACK MAPPING FOR AUDIT (UI Name -> DB Result ID) ---
+const TRACK_MAP: Record<string, string> = {
+    // USA Regular
+    'New York AM': 'usa/ny/Midday',
+    'New York PM': 'usa/ny/Evening',
+    'Georgia Midday': 'usa/ga/Midday',
+    'Georgia Evening': 'usa/ga/Evening',
+    'Georgia Night': 'usa/ga/Night',
+    'New Jersey AM': 'usa/nj/Midday',
+    'New Jersey PM': 'usa/nj/Evening',
+    'Florida AM': 'usa/fl/Midday',
+    'Florida PM': 'usa/fl/Evening',
+    'Connect AM': 'usa/ct/Day',
+    'Connect PM': 'usa/ct/Night',
+    'Pennsylvania AM': 'usa/pa/Day',
+    'Pennsylvania PM': 'usa/pa/Evening',
+    
+    // USA New
+    'Texas Morning': 'usa/tx/Morning',
+    'Texas Day': 'usa/tx/Day',
+    'Texas Evening': 'usa/tx/Evening',
+    'Texas Night': 'usa/tx/Night',
+    'Maryland AM': 'usa/md/AM',
+    'Maryland PM': 'usa/md/PM',
+    'South C Midday': 'usa/sc/Midday',
+    'South C Evening': 'usa/sc/Evening',
+    'Michigan Day': 'usa/mi/Day',
+    'Michigan Night': 'usa/mi/Night',
+    'Delaware AM': 'usa/de/Day',
+    'Delaware PM': 'usa/de/Night',
+    'Tennessee Midday': 'usa/tn/Midday',
+    'Tennessee Evening': 'usa/tn/Evening',
+    'Massachusetts Midday': 'usa/ma/Midday',
+    'Massachusetts Evening': 'usa/ma/Evening',
+    'Virginia Day': 'usa/va/Day',
+    'Virginia Night': 'usa/va/Night',
+    'North Carolina AM': 'usa/nc/Day',
+    'North Carolina PM': 'usa/nc/Evening',
+
+    // Santo Domingo
+    'La Primera': 'rd/primer/AM',
+    'Lotedom': 'rd/lotedom/Tarde',
+    'La Suerte': 'rd/suerte/AM',
+    'La Suerte PM': 'rd/suerte/PM',
+    'Loteria Real': 'rd/real/Mediodía',
+    'Gana Mas': 'rd/ganamas/Tarde',
+    'Loteka': 'rd/loteka/Noche',
+    'Quiniela Pale': 'rd/quiniela/Diario',
+    'Nacional': 'rd/nacional/Noche',
+
+    // Special
+    'New York Horses': 'special/ny-horses/R1',
+    'Brooklyn Midday': 'special/ny-bk/AM',
+    'Brooklyn Evening': 'special/ny-bk/PM',
+    'Front Midday': 'special/ny-fp/AM',
+    'Front Evening': 'special/ny-fp/PM',
+};
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
-    const [activeTab, setActiveTab] = useState<'sales' | 'results' | 'ocr' | 'payouts'>('sales');
+    const [activeTab, setActiveTab] = useState<'sales' | 'results' | 'ocr' | 'payouts' | 'winners'>('sales');
     const [salesViewMode, setSalesViewMode] = useState<'tickets' | 'plays'>('tickets'); 
     const { playSound } = useSound();
     
@@ -140,6 +200,89 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         }
         setFilteredTickets(res);
     }, [searchTerm, dateFilter, tickets]);
+
+    // --- WINNERS AUDIT LOGIC (CORE) ---
+    const auditStats = useMemo(() => {
+        let totalPayout = 0;
+        const winningTicketsMap = new Map<string, boolean>();
+        const winnersList: any[] = [];
+        const integrityBreaches: any[] = [];
+        const resultsLiabilityMap: Record<string, number> = {}; // ResultID -> Payout Amount
+
+        tickets.forEach(ticket => {
+            const ticketTime = new Date(ticket.transactionDateTime).getTime();
+
+            ticket.plays.forEach(play => {
+                // LIFE CYCLE: Iterate over all scheduled dates for this ticket (Futures supported)
+                ticket.betDates.forEach(date => {
+                    // Iterate over all tracks selected
+                    ticket.tracks.forEach(trackName => {
+                        const resultId = TRACK_MAP[trackName];
+                        if (!resultId) return; // Skip if track not mapped
+
+                        // STRICT MATCHING: Result must match Track ID AND Date (not ticket date, but bet date)
+                        const result = results.find(r => r.lotteryId === resultId && r.date === date);
+
+                        if (result) {
+                            // --- INTEGRITY CHECK ---
+                            const resultTime = new Date(result.createdAt).getTime();
+                            // Allow 60s tolerance for clock drifts. Ticket must be sold BEFORE result created.
+                            const integrityOk = ticketTime < (resultTime + 60000); 
+
+                            // --- CALCULATION ---
+                            const wins = calculateWinnings(play, result, prizeTable);
+                            
+                            if (wins.length > 0) {
+                                const totalWinForPlay = wins.reduce((sum, w) => sum + w.prizeAmount, 0);
+                                
+                                if (totalWinForPlay > 0) {
+                                    const winnerEntry = {
+                                        id: `${ticket.ticketNumber}-${play.jugadaNumber}-${trackName}-${date}`,
+                                        ticketNumber: ticket.ticketNumber,
+                                        date: date, // The date it played for
+                                        track: trackName,
+                                        betNumber: play.betNumber,
+                                        gameMode: play.gameMode,
+                                        prize: totalWinForPlay,
+                                        integrityOk,
+                                        matchType: wins.map(w => w.matchType).join(', '),
+                                        resultNumbers: formatWinningResult(result),
+                                        timeGapSeconds: Math.round((resultTime - ticketTime) / 1000),
+                                        soldAt: ticket.transactionDateTime
+                                    };
+
+                                    winnersList.push(winnerEntry);
+                                    
+                                    if (integrityOk) {
+                                        totalPayout += totalWinForPlay;
+                                        winningTicketsMap.set(ticket.ticketNumber, true);
+                                        
+                                        // Update Liability for this specific result entry
+                                        if (!resultsLiabilityMap[result.id]) resultsLiabilityMap[result.id] = 0;
+                                        resultsLiabilityMap[result.id] += totalWinForPlay;
+                                    } else {
+                                        integrityBreaches.push(winnerEntry);
+                                    }
+                                }
+                            }
+                        }
+                        // If no result found, Play is PENDING/ACTIVE.
+                    });
+                });
+            });
+        });
+
+        // Sort winners by date desc
+        winnersList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        return {
+            totalPayout,
+            winningTicketsCount: winningTicketsMap.size,
+            winnersList,
+            integrityBreaches,
+            resultsLiabilityMap
+        };
+    }, [tickets, results, prizeTable]);
 
     const flattenedPlays = filteredTickets.flatMap(t => 
         t.plays.map(p => ({
@@ -293,19 +436,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
 
     const handleSaveResult = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newResultTrack || !viewResultsDate || !newResult1st) return;
+        // Allow saving if at least P3 or P4 or 1st is present
+        if (!newResultTrack || !viewResultsDate || (!newResult1st && !newResultP3 && !newResultP4)) return;
         
         const trackObj = allTracks.find(t => t.id === newResultTrack);
         if (!trackObj) return;
         
+        let f = newResult1st;
+        let s = newResult2nd;
+        let t = newResult3rd;
+
+        // Auto-calculate Venezuela positions if empty but P3/P4 exist
+        if (!f && !s && !t) {
+             const p3Clean = newResultP3.replace(/\D/g, '');
+             const p4Clean = newResultP4.replace(/\D/g, '');
+             
+             if (p3Clean.length >= 2) f = p3Clean.slice(-2);
+             if (p4Clean.length >= 2) s = p4Clean.slice(0, 2);
+             if (p4Clean.length >= 2) t = p4Clean.slice(-2);
+        }
+
         const newResult: WinningResult = {
             id: `${viewResultsDate}_${newResultTrack}`,
             date: viewResultsDate,
             lotteryId: newResultTrack,
-            lotteryName: trackObj.originalName, // Use Original Name from Catalog
-            first: newResult1st,
-            second: newResult2nd,
-            third: newResult3rd,
+            lotteryName: trackObj.originalName, 
+            first: f,
+            second: s,
+            third: t,
             pick3: newResultP3,
             pick4: newResultP4,
             createdAt: new Date().toISOString()
@@ -314,6 +472,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         loadResultsFromDb();
         setIsAddResultOpen(false);
         setNewResult1st(''); setNewResult2nd(''); setNewResult3rd(''); setNewResultP3(''); setNewResultP4('');
+        // Auto-switch view to the date we just added for
+        setViewResultsDate(viewResultsDate); 
     };
 
     const handleDeleteResult = (id: string) => {
@@ -330,7 +490,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             try {
                 const base64 = await fileToBase64(file);
                 setOcrImage(base64);
-                handleProcessOcr(base64);
+                // DO NOT AUTO PROCESS ON UPLOAD NOW - Wait for user choice
             } catch (err) {
                 console.error(err);
                 alert("Error reading file.");
@@ -347,12 +507,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 if (file) {
                     const base64 = await fileToBase64(file);
                     setOcrImage(base64);
-                    handleProcessOcr(base64);
+                    // DO NOT AUTO PROCESS ON PASTE NOW - Wait for user choice
                 }
             }
         }
     };
 
+    // CLOUD OCR (GEMINI)
     const handleProcessOcr = async (base64: string) => {
         setIsProcessingOcr(true);
         setOcrResults([]);
@@ -371,6 +532,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         } catch (e) {
             console.error(e);
             alert("OCR Failed. Please try again.");
+        } finally {
+            setIsProcessingOcr(false);
+        }
+    };
+
+    // LOCAL OCR (TESSERACT)
+    const handleProcessLocalOcr = async (base64: string) => {
+        setIsProcessingOcr(true);
+        setOcrResults([]);
+        try {
+            const parsed = await processLocalOcr(base64);
+            const rows: OcrStagingRow[] = parsed.map((p, idx) => ({
+                id: `loc-${Date.now()}-${idx}`,
+                source: p.source,
+                targetId: p.targetId || '',
+                value: p.value,
+                status: 'pending'
+            }));
+            
+            if (rows.length === 0) {
+                alert("Local OCR found no matches. Try AI mode for better results.");
+            }
+            setOcrResults(rows);
+        } catch (e) {
+            console.error(e);
+            alert("Local OCR Failed. Ensure Tesseract loaded.");
         } finally {
             setIsProcessingOcr(false);
         }
@@ -411,7 +598,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         if (!trackObj) return;
 
         // Use robust parser
-        const { f, s, t, p3, p4 } = parseRowValue(row.value);
+        let { f, s, t, p3, p4 } = parseRowValue(row.value);
+
+        // Auto-fill Venezuela if missing
+        if ((!f || !s || !t) && (p3 || p4)) {
+            if (!f && p3 && p3.length >= 2) f = p3.slice(-2);
+            if (!s && p4 && p4.length >= 2) s = p4.slice(0, 2);
+            if (!t && p4 && p4.length >= 2) t = p4.slice(-2);
+        }
 
         const newResult: WinningResult = {
             id: `${ocrDate}_${row.targetId}`, 
@@ -426,6 +620,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         localDbService.saveResult(newResult);
         setOcrResults(prev => prev.map(r => r.id === row.id ? { ...r, status: 'saved' } : r));
         loadResultsFromDb(); // Background refresh
+        setViewResultsDate(ocrDate); // Auto-switch view
     };
 
     // --- BATCH SAVE FOR OCR (FIXED & INFORMATIVE) ---
@@ -467,7 +662,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
 
             // Parse and Save
             try {
-                const { f, s, t, p3, p4 } = parseRowValue(row.value);
+                let { f, s, t, p3, p4 } = parseRowValue(row.value);
+
+                // Auto-fill Venezuela if missing
+                if ((!f || !s || !t) && (p3 || p4)) {
+                    if (!f && p3 && p3.length >= 2) f = p3.slice(-2);
+                    if (!s && p4 && p4.length >= 2) s = p4.slice(0, 2);
+                    if (!t && p4 && p4.length >= 2) t = p4.slice(-2);
+                }
+
                 const resultEntry: WinningResult = {
                     id: `${ocrDate}_${row.targetId}`,
                     date: ocrDate,
@@ -492,6 +695,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         if (savedCount > 0) {
             setOcrResults(newResults);
             loadResultsFromDb(); // Refresh the main list
+            
+            // AUTO-SWITCH VIEW TO OCR DATE to show user the results
+            setViewResultsDate(ocrDate);
+            
             setSuccessCount(savedCount);
             setShowSuccessOverlay(true);
             playSound('success');
@@ -500,7 +707,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             // If we saved some but not all, verify if there are leftovers
             const remaining = newResults.filter(r => r.status !== 'saved').length;
             if (remaining > 0) {
-                // Optional: subtle toast instead of alert
                 console.log(`${remaining} rows skipped due to missing Map/Value.`);
             }
         }
@@ -558,6 +764,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const totalSales = filteredTickets.reduce((acc, t) => acc + t.grandTotal, 0);
     const totalPlays = filteredTickets.reduce((acc, t) => acc + t.plays.length, 0);
     
+    // Net Profit Calculation for Winners Tab
+    const netProfit = totalSales - auditStats.totalPayout;
+
     return (
         <div className="min-h-screen bg-slate-900 text-gray-200 font-sans" onPaste={activeTab === 'ocr' ? handlePaste : undefined}>
             {/* Header */}
@@ -575,6 +784,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 <div className="flex bg-slate-700 rounded-lg p-1">
                     <button onClick={() => setActiveTab('sales')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'sales' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Sales</button>
                     <button onClick={() => setActiveTab('results')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'results' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Results</button>
+                    <button onClick={() => setActiveTab('winners')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'winners' ? 'bg-neon-green text-black shadow' : 'text-gray-400 hover:text-white'}`}>Winners</button>
                     <button onClick={() => setActiveTab('ocr')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'ocr' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>OCR</button>
                     <button onClick={() => setActiveTab('payouts')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'payouts' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Payouts</button>
                 </div>
@@ -707,6 +917,89 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </>
                 )}
 
+                {/* WINNERS TAB (NEW) */}
+                {activeTab === 'winners' && (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Total Payout</p>
+                                <p className="text-3xl font-bold text-neon-green">${auditStats.totalPayout.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Winning Tickets</p>
+                                <p className="text-3xl font-bold text-white">{auditStats.winningTicketsCount}</p>
+                            </div>
+                            <div className={`bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden ${netProfit < 0 ? 'border-red-500/50' : 'border-green-500/50'}`}>
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Net Profit</p>
+                                <p className={`text-3xl font-bold ${netProfit < 0 ? 'text-red-500' : 'text-blue-400'}`}>${netProfit.toFixed(2)}</p>
+                            </div>
+                        </div>
+
+                        {auditStats.integrityBreaches.length > 0 && (
+                            <div className="bg-red-900/30 border border-red-500 p-4 rounded-xl flex items-start gap-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 mt-1"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                                <div>
+                                    <h3 className="font-bold text-red-500">Integrity Breach Detected</h3>
+                                    <p className="text-sm text-red-200">Found {auditStats.integrityBreaches.length} winning tickets sold AFTER result declaration. Marked as VOID.</p>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left text-gray-300">
+                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold border-b border-slate-700 text-gray-500">
+                                        <tr>
+                                            <th className="p-4">Status</th>
+                                            <th className="p-4">Ticket</th>
+                                            <th className="p-4">Date / Track</th>
+                                            <th className="p-4">Match</th>
+                                            <th className="p-4">Time Gap</th>
+                                            <th className="p-4 text-right">Prize</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-700">
+                                        {auditStats.winnersList.map((win, idx) => (
+                                            <tr key={win.id || idx} className="hover:bg-slate-700/50">
+                                                <td className="p-4">
+                                                    {win.integrityOk ? (
+                                                        <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-bold uppercase border border-green-500/30">PAID</span>
+                                                    ) : (
+                                                        <span className="px-2 py-1 rounded bg-red-500/20 text-red-500 text-xs font-bold uppercase border border-red-500/30">VOID</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-4 font-mono text-neon-cyan">{win.ticketNumber}</td>
+                                                <td className="p-4 text-xs">
+                                                    <div className="font-bold text-white">{win.track}</div>
+                                                    <div className="text-slate-500">{win.date}</div>
+                                                </td>
+                                                <td className="p-4 text-xs">
+                                                    <div className="flex gap-2">
+                                                        <span className="font-mono text-white">Bet: {win.betNumber}</span>
+                                                        <span className="font-mono text-green-400">Res: {win.resultNumbers}</span>
+                                                    </div>
+                                                    <div className="text-slate-500 mt-1">{win.gameMode} ({win.matchType})</div>
+                                                </td>
+                                                <td className="p-4 text-xs font-mono text-slate-400">
+                                                    {win.timeGapSeconds > 0 ? (
+                                                        <span className="text-green-500">Sold {Math.abs(win.timeGapSeconds)}s before</span>
+                                                    ) : (
+                                                        <span className="text-red-500 font-bold">Sold {Math.abs(win.timeGapSeconds)}s AFTER</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-4 text-right font-bold text-neon-green text-lg">${win.prize.toFixed(2)}</td>
+                                            </tr>
+                                        ))}
+                                        {auditStats.winnersList.length === 0 && (
+                                            <tr><td colSpan={6} className="p-12 text-center text-gray-500">No winners found.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </>
+                )}
+
                 {/* RESULTS TAB (RESTRUCTURED) */}
                 {activeTab === 'results' && (
                     <>
@@ -738,35 +1031,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                 <table className="w-full text-sm text-left text-gray-300">
                                     <thead className="bg-slate-900/50 text-xs uppercase font-bold border-b border-slate-700 text-gray-500">
                                         <tr>
+                                            <th className="p-4 text-center w-32">Date</th>
                                             <th className="p-4 w-1/4">Lotería</th>
                                             <th className="p-4 text-center text-blue-400 w-20">first</th>
                                             <th className="p-4 text-center w-20">second</th>
                                             <th className="p-4 text-center w-20">third</th>
                                             <th className="p-4 text-center text-purple-400 w-24">pick_3</th>
                                             <th className="p-4 text-center text-orange-400 w-24">pick_4</th>
+                                            <th className="p-4 text-right">Hits / Payout</th>
                                             <th className="p-4 text-right w-12">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
-                                        {displayedResults.map(res => (
-                                            <tr key={res.id} className="hover:bg-slate-700/50">
-                                                <td className="p-4 font-bold text-white">
-                                                    {res.lotteryName} <span className="text-xs font-normal text-slate-500 ml-1">({res.lotteryId.split('/').pop()})</span>
-                                                </td>
-                                                <td className="p-4 text-center font-mono font-bold text-lg text-blue-400">{res.first || '---'}</td>
-                                                <td className="p-4 text-center font-mono text-base">{res.second || '---'}</td>
-                                                <td className="p-4 text-center font-mono text-base">{res.third || '---'}</td>
-                                                <td className="p-4 text-center font-mono text-purple-400">{res.pick3 || '---'}</td>
-                                                <td className="p-4 text-center font-mono text-orange-400">{res.pick4 || '---'}</td>
-                                                <td className="p-4 text-right">
-                                                    <button onClick={() => handleDeleteResult(res.id)} className="text-red-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {displayedResults.map(res => {
+                                            const payout = auditStats.resultsLiabilityMap[res.id] || 0;
+                                            return (
+                                                <tr key={res.id} className="hover:bg-slate-700/50">
+                                                    <td className="p-4 text-center font-mono text-xs text-gray-400">{res.date}</td>
+                                                    <td className="p-4 font-bold text-white">
+                                                        {res.lotteryName} <span className="text-xs font-normal text-slate-500 ml-1">({res.lotteryId.split('/').pop()})</span>
+                                                    </td>
+                                                    <td className="p-4 text-center font-mono font-bold text-lg text-blue-400">{res.first || '---'}</td>
+                                                    <td className="p-4 text-center font-mono text-base">{res.second || '---'}</td>
+                                                    <td className="p-4 text-center font-mono text-base">{res.third || '---'}</td>
+                                                    <td className="p-4 text-center font-mono text-purple-400">{res.pick3 || '---'}</td>
+                                                    <td className="p-4 text-center font-mono text-orange-400">{res.pick4 || '---'}</td>
+                                                    <td className={`p-4 text-right font-mono font-bold ${payout > 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                                                        {payout > 0 ? `-$${payout.toFixed(2)}` : '-'}
+                                                    </td>
+                                                    <td className="p-4 text-right">
+                                                        <button onClick={() => handleDeleteResult(res.id)} className="text-red-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                         {displayedResults.length === 0 && (
-                                            <tr><td colSpan={7} className="p-12 text-center text-gray-500">No results found for {viewResultsDate}.</td></tr>
+                                            <tr><td colSpan={9} className="p-12 text-center text-gray-500">No results found for {viewResultsDate}.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -822,13 +1124,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                             
                             <div className="flex gap-4 w-full max-w-lg justify-center flex-wrap">
                                 {ocrImage && (
-                                    <button 
-                                        onClick={() => ocrImage && handleProcessOcr(ocrImage)}
-                                        disabled={isProcessingOcr}
-                                        className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded shadow disabled:opacity-50"
-                                    >
-                                        {isProcessingOcr ? 'Processing...' : 'Ejecutar OCR Imagen'}
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => ocrImage && handleProcessLocalOcr(ocrImage)}
+                                            disabled={isProcessingOcr}
+                                            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded shadow disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            <span>⚡</span> Local (Fast)
+                                        </button>
+                                        <button 
+                                            onClick={() => ocrImage && handleProcessOcr(ocrImage)}
+                                            disabled={isProcessingOcr}
+                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            <span>🧠</span> AI (Smart)
+                                        </button>
+                                    </div>
                                 )}
                                 <button 
                                     onClick={handleProcessText}

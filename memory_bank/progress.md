@@ -3,31 +3,31 @@
 
 ## Estado Actual de las Características
 
-### Completado (v3.1 - Admin Refinement)
+### Completado (v3.5 - Beast Office Stable)
 
 -   [x] **Núcleo del Playground:** Estructura base, gestión de jugadas, cálculos.
--   [x] **Unificación de Datos:** `RESULTS_CATALOG` como fuente única de verdad para IDs y horarios.
--   [x] **Identidad Visual:** Logos SVG vectoriales (`LotteryLogos.tsx`) integrados en todo el sitio.
--   [x] **Admin Dashboard (Estructura):**
-    -   [x] Panel de Ventas (Métricas, Listado, QR Scanner).
-    -   [x] Panel de Resultados (Listado, Borrado, Agregado Manual).
-    -   [x] Calculadora de Premios (Simulador de reglas NY/Non-NY).
-    -   [x] **OCR Staging Area:** Interfaz para cargar imágenes/texto y mapear resultados.
--   [x] **Persistencia Local (LocalDB):** Servicio `localDbService` funcionando para Tickets y Resultados.
--   [x] **Herramientas de Entrada Rápida (User Side):** Wizard, Magic Slate, Chatbot.
+-   [x] **Unificación de Datos:** `RESULTS_CATALOG` como fuente única de verdad.
+-   [x] **Identidad Visual:** Logos SVG vectoriales integrados.
+-   [x] **Admin Dashboard ("Beast Office"):**
+    -   [x] **UI Premium:** Diseño industrial, toggles de cápsula, tipografía técnica.
+    -   [x] **Sales Panel:** Vista dual (Tickets/Plays), QR Scanner.
+    -   [x] **Results Panel:** Gestión CRUD completa, Historial.
+    -   [x] **Payouts Panel:** Calculadora manual, Configuración de reglas, Simulador de ganadores.
+    -   [x] **OCR Panel (Avanzado):**
+        -   [x] Motor Híbrido (Local Tesseract + Cloud AI).
+        -   [x] Scroll infinito (corrección de layout).
+        -   [x] Batch Save con validación.
+-   [x] **Lógica de Negocio:**
+    -   [x] Mapeo inteligente de "Jerga de Banca" (State, Horses, etc.).
+    -   [x] Soporte de longitud variable para Horses.
+-   [x] **Persistencia Local (LocalDB):** Servicio robusto.
 
-### EN PROGRESO / DEPURACIÓN (PRIORIDAD ALTA)
+### En Progreso / Wishlist
 
--   [ ] **Admin OCR Batch Save:** El botón "Save All" en el Admin Dashboard falla silenciosamente. (Los guardados individuales funcionan).
-
-### Pendiente (Roadmap Futuro)
-
--   [ ] **Módulo de Pagos: Integración con Shopify**.
--   [ ] **Módulo de Herramientas Premium: Generador de Números Estratégicos**.
--   [ ] **Módulo de Cuentas de Usuario (Login Real)**.
--   [ ] **Conexión a API de Resultados en Vivo (Externa)**.
+-   [ ] **Planificación de Wishlist del Usuario.**
+-   [ ] **Módulo de Pagos:** Integración con pasarelas.
+-   [ ] **Cuentas de Usuario:** Persistencia en la nube.
 
 ## Problemas Conocidos
 
--   **OCR Save All:** Fallo lógico en la iteración de filas pendientes en `AdminDashboard.tsx`.
--   **Reconocimiento de Voz en iOS (Creole):** Limitaciones de Safari con el idioma 'ht'.
+-   **Reconocimiento de Voz (iOS):** Limitaciones conocidas con el idioma 'ht' en Safari.

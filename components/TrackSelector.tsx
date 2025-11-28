@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { TRACK_CATEGORIES, CUTOFF_TIMES } from '../constants';
 import { getTodayDateString } from '../utils/helpers';
@@ -21,9 +20,20 @@ const formatTime = (totalSeconds: number): string => {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
-// Pre-calculate ID sets
-const usaTrackIds = new Set(TRACK_CATEGORIES.find(c => c.name === 'USA')?.tracks.map(t => t.id) || []);
-const sdTrackIds = new Set(TRACK_CATEGORIES.find(c => c.name === 'Santo Domingo')?.tracks.map(t => t.id) || []);
+// Pre-calculate ID sets with corrected Category Matching
+// Matches "USA Regular States" and "USA New States"
+const usaTrackIds = new Set(
+    TRACK_CATEGORIES
+        .filter(c => c.name.includes('USA')) 
+        .flatMap(c => c.tracks.map(t => t.id))
+);
+
+// Matches "Santo Domingo"
+const sdTrackIds = new Set(
+    TRACK_CATEGORIES
+        .find(c => c.name === 'Santo Domingo')
+        ?.tracks.map(t => t.id) || []
+);
 
 const TrackSelector: React.FC<TrackSelectorProps> = ({ selectedTracks, onSelectionChange, selectedDates, pulitoPositions, onPulitoPositionsChange }) => {
     const [openCategory, setOpenCategory] = useState<string | null>(TRACK_CATEGORIES[0]?.name || null);
@@ -69,24 +79,27 @@ const TrackSelector: React.FC<TrackSelectorProps> = ({ selectedTracks, onSelecti
         let newPulitoPositions = [...pulitoPositions];
         const isCurrentlySelected = newSelection.includes(trackId);
 
-        const clickedTrackCategory = usaTrackIds.has(trackId) ? 'USA' : sdTrackIds.has(trackId) ? 'Santo Domingo' : 'Special';
+        // Identify the region of the clicked track
+        const isClickingUsa = usaTrackIds.has(trackId);
+        const isClickingSd = sdTrackIds.has(trackId);
 
         if (isCurrentlySelected) {
             newSelection = newSelection.filter(id => id !== trackId);
             if (trackId === 'Pulito') newPulitoPositions = [];
         } else {
-            // Enforce Mutual Exclusivity on Toggle
-            if (clickedTrackCategory === 'USA') {
-                // If selecting a USA track, remove all SD tracks
+            // Enforce Mutual Exclusivity on Selection
+            if (isClickingUsa) {
+                // If selecting a USA track, strictly remove ALL SD tracks
                 newSelection = newSelection.filter(id => !sdTrackIds.has(id));
             }
-            else if (clickedTrackCategory === 'Santo Domingo') {
-                // If selecting an SD track, remove all USA tracks
+            else if (isClickingSd) {
+                // If selecting an SD track, strictly remove ALL USA tracks
                 newSelection = newSelection.filter(id => !usaTrackIds.has(id));
             }
 
             newSelection.push(trackId);
 
+            // Special logic for Pulito/Venezuela exclusivity
             if (trackId === 'Pulito') {
                 newPulitoPositions = [1];
                 const venezuelaIndex = newSelection.indexOf('Venezuela');
@@ -156,7 +169,11 @@ const TrackSelector: React.FC<TrackSelectorProps> = ({ selectedTracks, onSelecti
                                         
                                         // Lock logic based on calculated state
                                         let isDisabledByCategory = false;
+                                        
+                                        // If any USA selected, disable SD tracks
                                         if (isAnyUsaSelected && isSdTrack) isDisabledByCategory = true;
+                                        
+                                        // If any SD selected, disable USA tracks
                                         if (isAnySdSelected && isUsaTrack) isDisabledByCategory = true;
 
                                         const isDisabled = isExpired || 

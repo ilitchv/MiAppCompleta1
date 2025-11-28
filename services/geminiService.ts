@@ -274,17 +274,25 @@ export const interpretWinningResultsImage = async (base64Image: string, catalogI
     CATALOG_IDS:
     ${JSON.stringify(catalogIds)}
     
+    STRICT MAPPING RULES (Banker Jargon):
+    1. "State" / "State Evening" -> Map STRICTLY to "usa/ny/Evening". Do not map to New York AM or generic NY.
+    2. "N.Y." / "N.Y" / "Race" / "Races" / "Horses" -> Map STRICTLY to "special/ny-horses/R1".
+       - SPECIAL RULE FOR HORSES: This track has variable length (1 to 4 digits).
+       - Do NOT force Pick 3/4 format. Return exactly what you see (e.g. "7", "58", "123", "4567").
+       - If digits are separated by spaces (e.g. "5 8 7"), combine them (e.g. "587").
+    
     RULES:
-    1. Extract the "source" (what you see in the image, e.g. "New York Eve").
-    2. Suggest the best "targetId" from my list (e.g. "usa/ny/Evening"). If no good match, return null.
+    1. Extract the "source" (what you see in the image, e.g. "State", "N.Y.", "NY Midday").
+    2. Suggest the best "targetId" from my list. If no good match, return null.
     3. Extract the "value" (winning numbers). Format them strictly:
        - USA Pick 3/4: "123", "1234", "123-4567" (if combined).
        - Santo Domingo: "12-34-56" (1st-2nd-3rd).
+       - Horses: "X" or "XX" or "XXX" or "XXXX" (Variable length).
     
     OUTPUT JSON ARRAY:
     [
-      { "source": "NY Midday", "targetId": "usa/ny/Midday", "value": "915-2415" },
-      { "source": "Real", "targetId": "rd/real/Mediodia", "value": "10-20-30" }
+      { "source": "State", "targetId": "usa/ny/Evening", "value": "915-2415" },
+      { "source": "N.Y.", "targetId": "special/ny-horses/R1", "value": "587" }
     ]
     `;
 
@@ -324,15 +332,15 @@ export const interpretWinningResultsText = async (text: string, catalogIds: stri
     You are a Lottery Result Parser for TABULAR TEXT input.
     The user has pasted a block of text where each line contains a lottery name and numbers.
     
-    INPUT FORMAT (Usually tab-separated or space-separated):
-    [Lottery Name] [1st] [2nd] [3rd] [Pick3] [Pick4]
-    Example: "ANGUILLA 10AM 23 70 69 --- ---" or "NEW YORK AM 56 59 31 356 5931"
-    Note: '---' or 'xx' or 'xxx' means empty/no value.
-
     I will provide a list of VALID CATALOG_IDS. You must Fuzzy Match the name found in the text to the closest ID.
 
     CATALOG_IDS:
     ${JSON.stringify(catalogIds)}
+
+    STRICT MAPPING RULES (Banker Jargon):
+    1. "State" / "State Evening" -> Map STRICTLY to "usa/ny/Evening".
+    2. "N.Y." / "N.Y" / "Race" / "Races" / "Horses" -> Map STRICTLY to "special/ny-horses/R1".
+       - SPECIAL RULE FOR HORSES: Variable length (1 to 4 digits). Do NOT force standard P3/P4 format.
 
     RAW TEXT INPUT:
     """
@@ -346,13 +354,13 @@ export const interpretWinningResultsText = async (text: string, catalogIds: stri
     3. Extract and Format the "value":
        - If Pick 3 or Pick 4 (cols 4/5) exist and are numbers, prioritize them (e.g., "123" or "1234").
        - If only 1st/2nd/3rd exist (cols 1/2/3), format as "12-34-56".
-       - If both exist (e.g. NY has quiniela AND pick4), try to capture the most relevant (usually Pick 3/4 for USA, Quiniela for RD).
+       - For Horses, return exact digits found (e.g. "587").
        - Ignore '---', 'xx', 'xxx'.
 
     OUTPUT JSON ARRAY:
     [
-      { "source": "ANGUILLA 10AM", "targetId": "special/anguilla/10AM", "value": "23-70-69" },
-      { "source": "NEW YORK AM", "targetId": "usa/ny/Midday", "value": "356-5931" }
+      { "source": "State", "targetId": "usa/ny/Evening", "value": "858-4307" },
+      { "source": "N.Y.", "targetId": "special/ny-horses/R1", "value": "587" }
     ]
     `;
 

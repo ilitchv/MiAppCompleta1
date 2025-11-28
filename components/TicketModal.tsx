@@ -228,19 +228,26 @@ const TicketModal: React.FC<TicketModalProps> = ({
     const isOnline = serverHealth === 'online';
 
     return (
-        <div ref={modalRef} className="fixed inset-0 bg-black/70 flex items-center justify-center p-2 sm:p-4 z-50 animate-fade-in" onClick={onClose}>
-            {/* Reduced width to max-w-[350px] (approx 75% of previous md) */}
-            <div className="bg-light-card dark:bg-dark-card rounded-xl shadow-lg w-full max-w-[350px] max-h-[95vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div ref={modalRef} className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={onClose}>
+            {/* 
+                UPDATED MODAL CONTAINER:
+                - max-h-[85vh] prevents cutting off on mobile browsers with bottom bars
+                - supports-[height:100dvh]:max-h-[85dvh] uses dynamic viewport height where supported
+                - overflow-hidden ensures border-radius clips the content properly
+                - flex-col ensures header/footer/body layout works
+            */}
+            <div className="bg-light-card dark:bg-dark-card rounded-xl shadow-lg w-full max-w-[350px] flex flex-col overflow-hidden max-h-[85vh] supports-[height:100dvh]:max-h-[85dvh]" onClick={e => e.stopPropagation()}>
+                
                 {/* Header (Fixed) */}
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center flex-shrink-0">
-                    <h2 className="text-lg font-bold text-neon-cyan">{isConfirmed ? 'Ticket Generated' : 'Confirm Ticket'}</h2>
-                    <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
-                        <svg data-lucide="x" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center flex-shrink-0 bg-light-card dark:bg-dark-card z-10">
+                    <h2 className="text-lg font-bold text-neon-cyan truncate mr-2">{isConfirmed ? 'Ticket Generated' : 'Confirm Ticket'}</h2>
+                    <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex-shrink-0">
+                        <svg data-lucide="x" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                     </button>
                 </div>
                 
                 {/* Scrollable Content Area */}
-                <div className="overflow-y-auto p-4 flex-grow min-h-0 bg-gray-50 dark:bg-black/20">
+                <div className="overflow-y-auto p-4 flex-grow min-h-0 bg-gray-50 dark:bg-black/20 overscroll-contain">
                     {/* Ticket Visual */}
                     <div ref={ticketContentRef} className="bg-white p-3 text-black font-mono text-xs w-full mx-auto leading-normal shadow-sm">
                         <div className="text-center space-y-1 mb-4">
@@ -294,7 +301,7 @@ const TicketModal: React.FC<TicketModalProps> = ({
                 </div>
 
                 {/* Footer with Action Buttons (Fixed) */}
-                <div className="p-4 flex-shrink-0 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                <div className="p-3 sm:p-4 flex-shrink-0 border-t border-gray-200 dark:border-gray-700 space-y-3 bg-light-card dark:bg-dark-card z-10 pb-safe">
                     
                     {/* CONFIRMED STATE */}
                     {isConfirmed ? (
