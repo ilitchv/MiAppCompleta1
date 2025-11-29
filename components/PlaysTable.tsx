@@ -244,7 +244,9 @@ const PlaysTable: React.FC<PlaysTableProps> = ({
                       placeholder="e.g. 123"
                     />
                   </td>
-                  <td className="p-2 font-mono text-xs text-gray-700 dark:text-gray-300">{play.gameMode}</td>
+                  <td className="p-2 font-mono text-xs text-gray-700 dark:text-gray-300">
+                    {play.gameMode === 'Single Action' ? 'Sing. Act.' : play.gameMode}
+                  </td>
                   <td className="p-2">{renderInput(play, 'straightAmount')}</td>
                   <td className="p-2">{renderInput(play, 'boxAmount')}</td>
                   <td className="p-2">{renderInput(play, 'comboAmount')}</td>

@@ -255,15 +255,16 @@ export const DEFAULT_PRIZE_TABLE: PrizeTable = {
     'Pick 3': {
         'STRAIGHT': 700,
         'STRAIGHT_TRIPLE': 500, // Rule: Strictly 500 for triples
-        'BOX_3WAY': 233.33,  // Double (112)
-        'BOX_6WAY': 116.67,  // Unique (123)
+        // BOX values are placeholders. The Calculator code handles 700/3 and 700/6 exact logic.
+        'BOX_3WAY': 233.33,  
+        'BOX_6WAY': 116.66,  
     },
     'Win 4': {
         'STRAIGHT': 5000,
-        'BOX_4WAY': 1200, // Rule: 1200 for Triple (1112)
-        'BOX_6WAY': 800,  // Double Couple (1122)
-        'BOX_12WAY': 400, // Couple (1123)
-        'BOX_24WAY': 200  // Unique (1234)
+        'BOX_4WAY': 1200, 
+        'BOX_6WAY': 800,  
+        'BOX_12WAY': 400, 
+        'BOX_24WAY': 200  
     },
     'Pick 2': {
         'STRAIGHT': 60,
@@ -272,24 +273,28 @@ export const DEFAULT_PRIZE_TABLE: PrizeTable = {
     'RD-Quiniela': {
         'FIRST': 56,
         'SECOND': 12,
-        'THIRD': 4
+        'THIRD': 4,
+        'FIRST_BOX': 28, // 50%
+        'SECOND_BOX': 6, // 50%
+        'THIRD_BOX': 2   // 50%
     },
     'Venezuela': {
         'FIRST': 55,
         'SECOND': 15,
         'THIRD': 10,
-        'PALE_FULL': 700,
-        'PALE_BOX': 175
+        'FIRST_BOX': 27.5, // 50%
+        'SECOND_BOX': 7.5, // 50%
+        'THIRD_BOX': 5,    // 50%
     },
     'Palé': {
-        'WIN_FULL': 700, // USA Pale Full (1st + 2nd/3rd)
-        'WIN_BOX': 175   // USA Pale Box (Any order)
+        'WIN_FULL': 700, // USA Pale Full (Any 2 positions of the 3)
+        'WIN_BOX': 175   // USA Pale Box (Permutations)
     },
     'Pale-RD': {
-        'WIN_FULL': 1300, // 1st + (2nd or 3rd)
-        'WIN_PARCIAL': 200, // 2nd + 3rd
-        'BOX_FULL': 325, // Box match for Full
-        'BOX_PARCIAL': 50 // Box match for Parcial
+        'WIN_FULL': 1300,   // STRICT: 1st + 2nd
+        'WIN_PARCIAL': 200, // STRICT: 1st + 3rd OR 2nd + 3rd
+        'BOX_FULL': 325,    // Box match for Full
+        'BOX_PARCIAL': 50   // Box match for Parcial
     },
     'Pulito': {
         'STRAIGHT': 80,
@@ -305,55 +310,58 @@ export const GAME_RULES_TEXT = [
         title: "Peak 3 (Pick 3)",
         content: `Modalidad de juego de 3 dígitos.
         \n• Straight (Exact Order) New York: $700. (Ej: Juegas 123, sale 123).
-        \n• Box (Doble) New York: $233.33. (Ej: Juegas 122, sale 122, 212, 221).
-        \n• Box (6-Way) New York: $116.67. (Ej: Juegas 123, sale cualquier orden).
-        \n• Straight Triple (000-999): $500 FIJO. Esta combinación siempre se juega Straight.
-        \n• Combo (6-Way): Juega todas las combinaciones como Straight ($700 c/u).
-        \n• Otros Estados: Straight $700, Box $116.67.`
+        \n• Box (Doble) 3-Way: $700 / 3 (Exacto).
+        \n• Box (Sencillo) 6-Way: $700 / 6 (Exacto).
+        \n• Straight Triple (000-999): $500 FIJO.
+        \n• Combo: Juega todas las combinaciones como Straight.`
     },
     {
         title: "Win Four (Win 4)",
         content: `Modalidad de juego de 4 dígitos.
         \n• Straight (New York): $5,000.
-        \n• Box 24-Way (4 distintos): $200.
-        \n• Box 12-Way (1 par): $400.
-        \n• Box 6-Way (2 pares): $800.
-        \n• Box 4-Way (Triple): $1,200.
-        \n• Otros Estados: Pagan la MITAD de lo que paga New York en cada modalidad (Straight $2,500, Box mitad de tabla).`
+        \n• Box 24-Way: $200.
+        \n• Box 12-Way: $400.
+        \n• Box 6-Way: $800.
+        \n• Box 4-Way: $1,200.
+        \n• Combo: Juega todas las combinaciones como Straight.
+        \n• Otros Estados: Pagan la MITAD de lo que paga New York.`
     },
     {
         title: "Venezuela",
-        content: `Apuestas de 2 dígitos (Quinielas) basadas en P3 y W4.
-        \n• 1era Posición (Últimos 2 de P3): $55.
-        \n• 2da Posición (Primeros 2 de W4): $15.
-        \n• 3ra Posición (Últimos 2 de W4): $10.`
+        content: `Apuestas de 2 dígitos.
+        \n• 1era (Pick3 Last 2): $55 (Box $27.5).
+        \n• 2da (Win4 First 2): $15 (Box $7.5).
+        \n• 3ra (Win4 Last 2): $10 (Box $5).`
     },
     {
         title: "Palé USA (Venezuela Positions)",
-        content: `Apuesta de dos parejas de dígitos usando posiciones de Venezuela.
-        \n• Palé Full: $700. (Acierto en 1era + (2da o 3ra) EXACTO).
-        \n• Palé Box: $175. (Acierto de los números en cualquier orden de posiciones, ej: sale 54 y jugaste 45 en 1era).`
+        content: `Combinación de dos números (Quinielas).
+        \n• Straight ($700): Si tus dos números salen en CUALQUIERA de las 3 posiciones (1+2, 1+3, 2+3).
+        \n• Box ($175): Si tus números (o sus inversos) salen en dos posiciones.`
     },
     {
-        title: "Pulito / Bolita",
-        content: `Apuesta de 2 dígitos a una posición específica (1, 2 o 3).
-        \n• Straight (Posición exacta): $80.
-        \n• Box (Posición exacta, orden inverso): $40.
-        \nPosiciones: 1=Pick3 First 2, 2=Pick3 Last 2, 3=Win4 First 2.`
+        title: "Pulito (4 Posiciones)",
+        content: `Apuesta a posición específica (1-4).
+        \n• 1: Pick3 First 2.
+        \n• 2: Pick3 Last 2.
+        \n• 3: Win4 First 2.
+        \n• 4: Win4 Last 2.
+        \n• Straight: $80.
+        \n• Box: $40.`
     },
     {
         title: "Lotería Santo Domingo (RD)",
-        content: `Quinielas y Palés en loterías Dominicanas.
-        \n• 1era: $56 | 2da: $12 | 3ra: $4.
-        \n• Palé Full (1ro con 2do ó 3ro): $1,300.
-        \n• Palé Parcial (2do con 3ro): $200.
-        \n• Palé Box Full: $325.
-        \n• Palé Box Parcial: $50.`
+        content: `Quinielas y Palés Dominicanos.
+        \n• Quiniela: 1era $56 | 2da $12 | 3ra $4. (Box paga 50%).
+        \n• Palé Full ($1,300): EXACTO 1era + 2da.
+        \n• Palé Parcial ($200): EXACTO (1era + 3ra) Ó (2da + 3ra).
+        \n• Palé Box Full ($325) / Parcial ($50).`
     },
     {
-        title: "Single Action / NY Horses",
-        content: `Apuesta de 1 dígito en posición específica.
-        \n• Single Action USA (Pos 1-7): $9.
-        \n• NY Horses (Pos 1-10): $9.`
+        title: "Single Action (Sing. Act.)",
+        content: `Apuesta de 1 dígito.
+        \n• USA: 7 Posiciones (P3: 1-3, W4: 1-4).
+        \n• Horses: 10 Posiciones (Caballos 0-9).
+        \n• Pago: $9.`
     }
 ];

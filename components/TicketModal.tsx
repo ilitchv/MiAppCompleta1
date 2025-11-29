@@ -281,7 +281,9 @@ const TicketModal: React.FC<TicketModalProps> = ({
                                         <tr key={play.id} className="border-t border-dashed border-gray-300 !text-black">
                                             <td className="py-1 px-0 text-[11px] align-top !text-black">{index + 1}</td>
                                             <td className="py-1 px-0 text-[11px] align-top !text-black font-bold">{play.betNumber}</td>
-                                            <td className="py-1 px-0 text-[10px] align-top !text-black break-words">{play.gameMode}</td>
+                                            <td className="py-1 px-0 text-[10px] align-top !text-black break-words">
+                                                {play.gameMode === 'Single Action' ? 'Sing. Act.' : play.gameMode}
+                                            </td>
                                             <td className="py-1 px-0 text-[11px] align-top !text-black text-right">{play.straightAmount ? play.straightAmount.toFixed(2) : '-'}</td>
                                             <td className="py-1 px-0 text-[11px] align-top !text-black text-right">{play.boxAmount ? play.boxAmount.toFixed(2) : '-'}</td>
                                             <td className="py-1 px-0 text-[11px] align-top !text-black text-right">{play.comboAmount ? play.comboAmount.toFixed(2) : '-'}</td>
