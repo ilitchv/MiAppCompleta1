@@ -43,7 +43,10 @@ const TrackButton: React.FC<TrackButtonProps> = ({ trackId, trackName, isSelecte
     let buttonClasses = "";
     let innerContentClasses = "z-10 flex items-center justify-center w-full px-1";
 
-    if (finalDisabled) {
+    // CRITICAL FIX: If selected, do NOT disable interactions, allowing user to deselect expired tracks
+    const effectiveDisabled = finalDisabled && !isSelected;
+
+    if (effectiveDisabled) {
         buttonClasses = `${galacticBase} ${colorClasses} ${disabledClasses} border-b-[2px] border-black/20 translate-y-[2px] shadow-none`;
     } else if (isSelected) {
          buttonClasses = `${galacticBase} ${colorClasses} ${galacticPressed} brightness-110`;
@@ -56,7 +59,7 @@ const TrackButton: React.FC<TrackButtonProps> = ({ trackId, trackName, isSelecte
     const renderStandardButton = () => (
         <button
             onClick={onClick}
-            disabled={finalDisabled}
+            disabled={effectiveDisabled}
             className={buttonClasses}
             aria-label={`Select track: ${trackName}${isExpired ? ' (Closed)' : ''}${isDisabled ? ' (Disabled)' : ''}`}
             aria-pressed={isSelected}

@@ -265,37 +265,41 @@ export const getTrackColorClasses = (trackIdOrName: string): string => {
     const t = trackIdOrName ? trackIdOrName.toLowerCase() : '';
 
     if (t.includes('/ny/') || t.includes('new york') || t.includes('ny-')) {
-        if (t.includes('horses')) return 'bg-gradient-to-b from-lime-400 to-lime-600';
-        if (t.includes('bk') || t.includes('brooklyn')) return 'bg-gradient-to-b from-sky-400 to-sky-600';
-        if (t.includes('front')) return 'bg-gradient-to-b from-purple-400 to-purple-600';
+        if (t.includes('horses')) return 'bg-gradient-to-b from-lime-500 to-lime-700';
+        if (t.includes('bk') || t.includes('brooklyn')) return 'bg-gradient-to-b from-sky-500 to-sky-700';
+        if (t.includes('front')) return 'bg-gradient-to-b from-purple-500 to-purple-700';
         return 'bg-gradient-to-b from-blue-600 to-blue-800'; 
     }
     
     if (t.includes('/nj/') || t.includes('new jersey')) return 'bg-gradient-to-b from-orange-500 to-orange-700';
     
-    if (t.includes('/fl/') || t.includes('florida') || t.includes('/flp2/')) return 'bg-gradient-to-b from-cyan-500 to-cyan-700';
+    if (t.includes('/fl/') || t.includes('florida') || t.includes('/flp2/')) return 'bg-gradient-to-b from-cyan-600 to-cyan-800';
     
     if (t.includes('/ga/') || t.includes('georgia')) return 'bg-gradient-to-b from-green-600 to-green-800';
     
-    if (t.includes('/ct/') || t.includes('connect')) return 'bg-gradient-to-b from-yellow-500 to-yellow-700 text-black';
+    // CT FIXED: Removed text-black, used darker amber for white text readability
+    if (t.includes('/ct/') || t.includes('connect')) return 'bg-gradient-to-b from-amber-600 to-amber-800';
     
-    if (t.includes('/pa/') || t.includes('penn')) return 'bg-gradient-to-b from-pink-600 to-pink-800';
+    if (t.includes('/pa/') || t.includes('penn')) return 'bg-gradient-to-b from-pink-700 to-pink-900';
 
-    if (t.includes('/rd/') || t.includes('santo') || t.includes('domingo') || 
-        t.includes('real') || t.includes('gana') || t.includes('nacional') || 
-        t.includes('loteka') || t.includes('suerte') || t.includes('primera') || t.includes('lotedom') || t.includes('quiniela')) {
-        return 'bg-gradient-to-r from-blue-800 via-white/20 to-red-800';
-    }
+    // SANTO DOMINGO - DISTINCT COLORS
+    if (t.includes('real')) return 'bg-gradient-to-b from-red-600 to-red-900'; // Real (Red)
+    if (t.includes('gana') || t.includes('nacional')) return 'bg-gradient-to-b from-blue-700 to-blue-950'; // Nacional (Blue)
+    if (t.includes('loteka')) return 'bg-gradient-to-b from-fuchsia-700 to-purple-900'; // Loteka (Purple)
+    if (t.includes('quiniela') || t.includes('pale')) return 'bg-gradient-to-b from-rose-600 to-rose-900'; // Leidsa (Red/Black)
+    if (t.includes('primera')) return 'bg-gradient-to-b from-yellow-600 to-yellow-800'; // Primera (Dark Yellow/Gold)
+    if (t.includes('suerte')) return 'bg-gradient-to-b from-emerald-600 to-emerald-900'; // La Suerte (Green)
+    if (t.includes('lotedom')) return 'bg-gradient-to-b from-sky-700 to-blue-900'; // Lotedom (Blue/Sky)
 
     if (t.includes('/tx/') || t.includes('texas')) return 'bg-gradient-to-b from-stone-600 to-stone-800';
-    if (t.includes('/md/') || t.includes('maryland')) return 'bg-gradient-to-b from-red-600 to-red-800';
-    if (t.includes('/sc/') || t.includes('south c')) return 'bg-gradient-to-b from-teal-500 to-teal-700';
-    if (t.includes('/mi/') || t.includes('michigan')) return 'bg-gradient-to-b from-violet-500 to-violet-700';
-    if (t.includes('/tn/') || t.includes('tennessee')) return 'bg-gradient-to-b from-amber-500 to-amber-700';
+    if (t.includes('/md/') || t.includes('maryland')) return 'bg-gradient-to-b from-red-700 to-red-900';
+    if (t.includes('/sc/') || t.includes('south c')) return 'bg-gradient-to-b from-teal-600 to-teal-800';
+    if (t.includes('/mi/') || t.includes('michigan')) return 'bg-gradient-to-b from-violet-600 to-violet-800';
+    if (t.includes('/tn/') || t.includes('tennessee')) return 'bg-gradient-to-b from-amber-700 to-red-900';
     
-    if (t.includes('venezuela')) return 'bg-gradient-to-br from-yellow-500 via-blue-600 to-red-600';
-    if (t.includes('anguilla')) return 'bg-gradient-to-br from-orange-400 via-blue-400 to-white';
-    if (t.includes('pulito')) return 'bg-gradient-to-b from-indigo-500 to-indigo-700';
+    if (t.includes('venezuela')) return 'bg-gradient-to-br from-yellow-600 via-blue-700 to-red-700';
+    if (t.includes('anguilla')) return 'bg-gradient-to-br from-orange-500 via-blue-500 to-blue-700';
+    if (t.includes('pulito')) return 'bg-gradient-to-b from-indigo-600 to-indigo-900';
 
     return 'bg-gradient-to-b from-gray-700 to-gray-900';
 };

@@ -441,6 +441,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setTimeout(() => osc.stop(), 100);
     };
 
+    // --- AUTO-CALCULATION HANDLERS ---
+    const handleP3Change = (val: string) => {
+        setNewResultP3(val);
+        // Clean non-digits
+        const clean = val.replace(/\D/g, '');
+        if (clean.length >= 2) {
+            setNewResult1st(clean.slice(-2));
+        }
+    };
+
+    const handleP4Change = (val: string) => {
+        setNewResultP4(val);
+        // Clean non-digits
+        const clean = val.replace(/\D/g, '');
+        if (clean.length >= 2) {
+            setNewResult2nd(clean.slice(0, 2));
+            setNewResult3rd(clean.slice(-2));
+        }
+    };
+
     const handleSaveResult = (e: React.FormEvent) => {
         e.preventDefault();
         // Allow saving if at least P3 or P4 or 1st is present
@@ -453,7 +473,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         let s = newResult2nd;
         let t = newResult3rd;
 
-        // Auto-calculate Venezuela positions if empty but P3/P4 exist
+        // Auto-calculate Venezuela positions if empty but P3/P4 exist (Final fallback)
         if (!f && !s && !t) {
              const p3Clean = newResultP3.replace(/\D/g, '');
              const p4Clean = newResultP4.replace(/\D/g, '');
@@ -1159,379 +1179,116 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
 
                 {/* AUDIT LOG MODAL */}
                 {isAuditLogOpen && (
-                    <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[70]" onClick={() => setIsAuditLogOpen(false)}>
-                        <div className="bg-slate-900 w-full max-w-4xl h-[80vh] flex flex-col rounded-xl border border-slate-600 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-                            <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-950">
-                                <h3 className="text-lg font-mono font-bold text-neon-cyan flex items-center gap-2">
-                                    <span className="w-2 h-2 bg-neon-cyan animate-pulse"></span> SYSTEM_AUDIT_LOG
+                    <div className="fixed inset-0 bg-black/90 z-[300] flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setIsAuditLogOpen(false)}>
+                        <div className="bg-slate-950 w-full max-w-4xl h-[80vh] rounded-lg border border-green-500/50 shadow-[0_0_50px_rgba(34,197,94,0.2)] flex flex-col font-mono text-xs" onClick={e => e.stopPropagation()}>
+                            <div className="p-3 border-b border-green-900 bg-black flex justify-between items-center">
+                                <h3 className="text-green-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                                    <span className="w-2 h-2 bg-green-500 animate-pulse"></span>
+                                    System Audit Log
                                 </h3>
-                                <button onClick={() => setIsAuditLogOpen(false)} className="text-gray-500 hover:text-white">✕</button>
+                                <button onClick={() => setIsAuditLogOpen(false)} className="text-green-700 hover:text-green-400">[CLOSE]</button>
                             </div>
-                            <div className="flex-grow overflow-auto p-4 font-mono text-xs">
-                                <table className="w-full text-left text-gray-400">
-                                    <thead className="text-slate-500 border-b border-slate-800 uppercase">
-                                        <tr>
-                                            <th className="pb-2 pl-2">Timestamp</th>
-                                            <th className="pb-2">Action</th>
-                                            <th className="pb-2">User</th>
-                                            <th className="pb-2">Details</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-800">
-                                        {auditLog.map((log, i) => (
-                                            <tr key={i} className="hover:bg-slate-800/50">
-                                                <td className="py-2 pl-2 text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</td>
-                                                <td className="py-2">
-                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                        log.action === 'CREATE' ? 'bg-green-500/20 text-green-400' :
-                                                        log.action === 'DELETE' ? 'bg-red-500/20 text-red-400' :
-                                                        'bg-blue-500/20 text-blue-400'
-                                                    }`}>
-                                                        {log.action}
-                                                    </span>
-                                                </td>
-                                                <td className="py-2 text-white">{log.user}</td>
-                                                <td className="py-2 text-gray-300">{log.details}</td>
-                                            </tr>
-                                        ))}
-                                        {auditLog.length === 0 && <tr><td colSpan={4} className="py-8 text-center opacity-50">-- END OF LOG --</td></tr>}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* OCR TAB (RESTORED & ENHANCED) */}
-                {activeTab === 'ocr' && (
-                    <div className="grid grid-cols-1 gap-6 h-full">
-                        {/* TOP: Input Area */}
-                        <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 flex flex-col items-center gap-4">
-                            <div className="w-full flex justify-center mb-2">
-                                <div className="flex items-center gap-2 bg-black/30 p-2 rounded-lg border border-slate-600">
-                                    <label className="text-xs font-bold text-neon-cyan uppercase">FECHA DE CARGA:</label>
-                                    <input 
-                                        type="date" 
-                                        value={ocrDate} 
-                                        onChange={(e) => setOcrDate(e.target.value)} 
-                                        className="bg-slate-700 border border-slate-600 rounded p-1 text-white text-sm outline-none focus:border-neon-cyan" 
-                                    />
-                                </div>
-                            </div>
-
-                            {ocrImage ? (
-                                <div className="relative w-full max-w-lg">
-                                    <img src={`data:image/jpeg;base64,${ocrImage}`} alt="OCR Preview" className="rounded-lg border border-slate-600 max-h-[200px] mx-auto object-contain" />
-                                    <button onClick={() => { setOcrImage(null); setOcrResults([]); }} className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                    </button>
-                                </div>
-                            ) : (
-                                <div 
-                                    onDragOver={(e) => e.preventDefault()}
-                                    onDrop={(e) => {
-                                        e.preventDefault();
-                                        const file = e.dataTransfer.files[0];
-                                        if (file) {
-                                            const event = { target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>;
-                                            handleOcrFileChange(event);
-                                        }
-                                    }}
-                                    onClick={() => ocrFileInputRef.current?.click()}
-                                    className="w-full p-10 border-2 border-dashed border-slate-600 rounded-lg hover:border-neon-cyan transition-colors cursor-pointer flex flex-col items-center gap-2"
-                                >
-                                    <svg className="w-10 h-10 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                    <p className="text-sm font-bold text-slate-300">Arrastra imágenes. Previsualiza y guarda la tabla detectada.</p>
-                                    <button className="px-4 py-1 bg-slate-700 rounded text-xs text-white mt-2">Choose Files</button>
-                                </div>
-                            )}
-                            <input type="file" ref={ocrFileInputRef} accept="image/*" className="hidden" onChange={handleOcrFileChange} />
-                            
-                            <div className="flex gap-4 w-full max-w-lg justify-center flex-wrap">
-                                {ocrImage && (
-                                    <div className="flex gap-2">
-                                        <button 
-                                            onClick={() => ocrImage && handleProcessLocalOcr(ocrImage)}
-                                            disabled={isProcessingOcr}
-                                            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded shadow disabled:opacity-50 flex items-center gap-2"
-                                        >
-                                            <span>⚡</span> Local (Fast)
-                                        </button>
-                                        <button 
-                                            onClick={() => ocrImage && handleProcessOcr(ocrImage)}
-                                            disabled={isProcessingOcr}
-                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow disabled:opacity-50 flex items-center gap-2"
-                                        >
-                                            <span>🧠</span> AI (Smart)
-                                        </button>
-                                    </div>
-                                )}
-                                <button 
-                                    onClick={handleProcessText}
-                                    disabled={!ocrText.trim() || isProcessingOcr}
-                                    className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow disabled:opacity-50"
-                                >
-                                    {isProcessingOcr ? 'Processing...' : 'Procesar Texto'}
-                                </button>
-                                <button onClick={() => { setOcrImage(null); setOcrText(''); setOcrResults([]); }} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded font-bold">Limpiar todo</button>
-                                
-                                {/* SAVE ALL BUTTON */}
-                                {ocrResults.length > 0 && (
-                                    <button 
-                                        onClick={handleSaveAllOcrRows}
-                                        disabled={ocrResults.filter(r => r.status !== 'saved').length === 0}
-                                        className="px-4 py-2 bg-neon-green hover:bg-green-400 text-black font-bold rounded shadow-lg shadow-neon-green/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2 transition-all"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                                        SAVE ALL ({ocrResults.filter(r => r.status !== 'saved').length})
-                                    </button>
-                                )}
-                            </div>
-                            
-                            <textarea 
-                                value={ocrText}
-                                onChange={(e) => setOcrText(e.target.value)}
-                                className="w-full max-w-3xl h-24 bg-black/30 border border-slate-700 rounded p-2 text-xs font-mono text-green-400 focus:border-neon-cyan outline-none" 
-                                placeholder="Pega aquí el texto tabulado (ej.: 'ANGUILLA 10AM	23	70	69	---	---')"
-                            />
-                        </div>
-
-                        {/* BOTTOM: Staging Table */}
-                        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col">
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left text-gray-300">
-                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold text-green-400 border-b border-slate-700 sticky top-0">
-                                        <tr>
-                                            <th className="p-4 w-1/4">Abbrev.</th>
-                                            <th className="p-4 w-1/4">Map</th>
-                                            <th className="p-4 w-1/6">Detected</th>
-                                            <th className="p-4 w-1/6">Value</th>
-                                            <th className="p-4 text-right">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-700">
-                                        {ocrResults.map(row => (
-                                            <tr key={row.id} className={row.status === 'saved' ? 'opacity-50 bg-green-900/10' : 'hover:bg-slate-700/30'}>
-                                                <td className="p-4 font-bold text-white uppercase">{row.source}</td>
-                                                <td className="p-4">
-                                                    <select 
-                                                        value={row.targetId} 
-                                                        onChange={(e) => handleOcrRowChange(row.id, 'targetId', e.target.value)}
-                                                        disabled={row.status === 'saved'}
-                                                        className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white outline-none focus:border-neon-cyan text-xs"
-                                                    >
-                                                        <option value="">—</option>
-                                                        {allTracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                                    </select>
-                                                </td>
-                                                <td className="p-4 font-mono text-white">{row.value}</td>
-                                                <td className="p-4">
-                                                    <input 
-                                                        type="text" 
-                                                        value={row.value} 
-                                                        onChange={(e) => handleOcrRowChange(row.id, 'value', e.target.value)}
-                                                        disabled={row.status === 'saved'}
-                                                        className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white font-mono outline-none focus:border-neon-cyan text-xs"
-                                                    />
-                                                </td>
-                                                <td className="p-4 text-right">
-                                                    {row.status === 'saved' ? (
-                                                        <span className="text-green-500 font-bold text-xs uppercase">Saved</span>
-                                                    ) : (
-                                                        <button 
-                                                            onClick={() => handleSaveOcrRow(row)}
-                                                            className="px-4 py-1.5 bg-green-900/50 hover:bg-green-800 border border-green-700 text-white text-xs font-bold rounded shadow uppercase tracking-wider"
-                                                        >
-                                                            Save
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {ocrResults.length === 0 && !isProcessingOcr && (
-                                            <tr><td colSpan={5} className="p-12 text-center text-gray-500">Waiting for input...</td></tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* PAYOUTS TAB (ENHANCED) */}
-                {activeTab === 'payouts' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
-                        {/* COLUMN 1: CONFIGURATION (4 cols) */}
-                        <div className="lg:col-span-4 space-y-4">
-                            <h2 className="text-xl font-bold text-neon-cyan mb-4">Payout Configuration</h2>
-                            <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 space-y-4 overflow-y-auto max-h-[70vh]">
-                                {Object.entries(prizeTable).map(([gameMode, table]) => (
-                                    <div key={gameMode} className="border border-slate-700 rounded-lg overflow-hidden">
-                                        <div className="bg-slate-900 p-3 font-bold text-white border-b border-slate-700 flex justify-between">
-                                            {gameMode}
-                                            <span className="text-xs text-gray-500 font-normal">Per $1</span>
-                                        </div>
-                                        <div className="p-3 grid grid-cols-2 gap-3 bg-slate-800/50">
-                                            {Object.entries(table).map(([betType, amount]) => (
-                                                <div key={betType}>
-                                                    <label className="block text-[10px] uppercase text-gray-400 mb-1 truncate" title={betType}>{betType}</label>
-                                                    <div className="relative">
-                                                        <span className="absolute left-2 top-1.5 text-gray-500 text-sm">$</span>
-                                                        <input 
-                                                            type="number" 
-                                                            value={amount} 
-                                                            onChange={(e) => handlePrizeTableChange(gameMode, betType, e.target.value)}
-                                                            className="w-full bg-slate-900 border border-slate-600 rounded pl-5 pr-2 py-1 text-sm text-white focus:border-neon-cyan outline-none"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* COLUMN 2: TOOLS (MANUAL CALC + RULES) (4 cols) */}
-                        <div className="lg:col-span-4 space-y-6">
-                            {/* MANUAL CALCULATOR */}
-                            <div className="bg-slate-800 rounded-2xl border border-slate-600 shadow-2xl overflow-hidden relative">
-                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-neon-cyan via-purple-500 to-blue-500"></div>
-                                <div className="p-5">
-                                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="14"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>
-                                        Prize Calculator
-                                    </h3>
-                                    
-                                    <div className="space-y-3">
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="text-[10px] uppercase text-gray-400">Game</label>
-                                                <select value={calcGame} onChange={e => { setCalcGame(e.target.value); setCalcType(Object.keys(prizeTable[e.target.value] || {})[0]); }} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white">
-                                                    {Object.keys(prizeTable).map(g => <option key={g} value={g}>{g}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] uppercase text-gray-400">Type</label>
-                                                <select value={calcType} onChange={e => setCalcType(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white">
-                                                    {Object.keys(prizeTable[calcGame] || {}).map(t => <option key={t} value={t}>{t}</option>)}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-2 gap-2 items-end">
-                                            <div>
-                                                <label className="text-[10px] uppercase text-gray-400">Wager</label>
-                                                <div className="relative">
-                                                    <span className="absolute left-3 top-2 text-gray-500">$</span>
-                                                    <input 
-                                                        type="number" 
-                                                        step="0.01"
-                                                        min="0"
-                                                        value={calcWager} 
-                                                        onChange={e => setCalcWager(e.target.value)} 
-                                                        className="w-full bg-slate-900 border border-slate-600 rounded p-2 pl-6 text-white font-mono" 
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center justify-between bg-slate-900 p-2 rounded border border-slate-600">
-                                                <span className="text-xs text-gray-400">Is New York?</span>
-                                                <input type="checkbox" checked={calcIsNY} onChange={e => setCalcIsNY(e.target.checked)} className="w-5 h-5 accent-neon-cyan" />
-                                            </div>
-                                        </div>
-
-                                        {/* DISPLAY */}
-                                        <div className="mt-4 p-4 bg-black rounded-lg border border-neon-cyan/30 shadow-[inset_0_0_20px_rgba(0,255,255,0.1)] text-center">
-                                            <p className="text-[10px] text-neon-cyan font-mono uppercase mb-1">Estimated Payout</p>
-                                            <p className="text-3xl font-bold text-green-400 font-mono tracking-wider drop-shadow-[0_0_5px_rgba(74,222,128,0.5)]">
-                                                ${getCalculatedPayout().toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* RULES ACCORDION */}
-                            <div className="bg-slate-800 rounded-2xl border border-slate-600 shadow-lg overflow-hidden">
-                                <div className="p-4 bg-slate-900 border-b border-slate-700">
-                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Game Rules & Payouts</h3>
-                                </div>
-                                <div className="divide-y divide-slate-700 max-h-[400px] overflow-y-auto">
-                                    {GAME_RULES_TEXT.map((rule, idx) => (
-                                        <div key={idx} className="group">
-                                            <button 
-                                                onClick={() => setActiveRule(activeRule === idx ? null : idx)}
-                                                className="w-full flex justify-between items-center p-4 text-left hover:bg-slate-700/50 transition-colors"
-                                            >
-                                                <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">{rule.title}</span>
-                                                <svg className={`w-4 h-4 text-gray-500 transform transition-transform ${activeRule === idx ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                                            </button>
-                                            {activeRule === idx && (
-                                                <div className="p-4 bg-slate-900/50 text-xs text-gray-400 font-mono leading-relaxed whitespace-pre-line border-l-2 border-neon-cyan ml-4 mb-2">
-                                                    {rule.content}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* COLUMN 3: SIMULATION RUNNER (4 cols) */}
-                        <div className="lg:col-span-4 flex flex-col h-full">
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xl font-bold text-white">Simulation</h2>
-                                <button 
-                                    onClick={handleRunCalculation} 
-                                    disabled={isCalculating}
-                                    className="px-6 py-2 bg-gradient-to-r from-neon-cyan to-blue-600 text-black font-bold rounded-lg shadow-lg hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                                >
-                                    {isCalculating ? (
-                                        <span className="animate-pulse">Processing...</span>
-                                    ) : (
-                                        <>
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-                                            RUN
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-
-                            <div className="flex-grow bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col">
-                                <div className="p-4 border-b border-slate-700 bg-slate-900/50 flex flex-col gap-2">
-                                    <div className="flex justify-between">
-                                        <span className="text-sm text-gray-400">Winners</span>
-                                        <span className="text-white font-bold">{winners.length}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-sm text-gray-400">Total Payout</span>
-                                        <span className="text-green-400 font-bold text-lg">${winners.reduce((acc, w) => acc + w.prizeAmount, 0).toFixed(2)}</span>
-                                    </div>
-                                </div>
-                                
-                                <div className="overflow-auto flex-grow">
-                                    <table className="w-full text-sm text-left text-gray-300">
-                                        <thead className="bg-slate-900 text-xs uppercase font-bold border-b border-slate-700 sticky top-0 text-gray-500">
+                            <div className="flex-1 overflow-auto p-4 space-y-2 custom-scrollbar">
+                                {auditLog.length === 0 ? (
+                                    <p className="text-green-900 italic">No audit records found.</p>
+                                ) : (
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="text-green-700 border-b border-green-900 sticky top-0 bg-slate-950">
                                             <tr>
-                                                <th className="p-2">Ticket</th>
-                                                <th className="p-2">Bet</th>
-                                                <th className="p-2 text-right">Prize</th>
+                                                <th className="py-2 w-32">TIMESTAMP</th>
+                                                <th className="py-2 w-20">USER</th>
+                                                <th className="py-2 w-20">ACTION</th>
+                                                <th className="py-2">DETAILS</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-700">
-                                            {winners.map((win, idx) => (
-                                                <tr key={idx} className="hover:bg-green-900/20">
-                                                    <td className="p-2 font-mono text-neon-cyan text-xs">{win.ticketNumber}</td>
-                                                    <td className="p-2 text-xs">
-                                                        <div className="font-bold">{win.betNumber}</div>
-                                                        <div className="text-[10px] text-gray-500">{win.gameMode}</div>
-                                                    </td>
-                                                    <td className="p-2 text-right font-bold text-green-400">${win.prizeAmount.toFixed(2)}</td>
+                                        <tbody className="text-green-400 divide-y divide-green-900/30">
+                                            {auditLog.map((log) => (
+                                                <tr key={log.id} className="hover:bg-green-900/10 transition-colors">
+                                                    <td className="py-2 pr-2 opacity-70">{new Date(log.timestamp).toLocaleString()}</td>
+                                                    <td className="py-2 pr-2">{log.user}</td>
+                                                    <td className="py-2 pr-2 font-bold">{log.action}</td>
+                                                    <td className="py-2">{log.details}</td>
                                                 </tr>
                                             ))}
-                                            {winners.length === 0 && (
-                                                <tr><td colSpan={3} className="p-8 text-center text-gray-500 italic">Run simulation to see winners.</td></tr>
-                                            )}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* TICKET DETAIL MODAL (FIXED MOBILE SCROLL) */}
+                {selectedTicket && (
+                    <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50" onClick={() => setSelectedTicket(null)}>
+                        {/* CHANGED: overflow-y-auto on wrapper for mobile scroll, lg:overflow-hidden for desktop layout */}
+                        <div className="bg-slate-800 w-full max-w-5xl h-[90vh] lg:h-[85vh] overflow-y-auto lg:overflow-hidden rounded-xl shadow-2xl flex flex-col lg:flex-row border border-slate-600" onClick={e => e.stopPropagation()}>
+                            <div className="lg:w-1/3 bg-black p-4 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-700 flex flex-col items-center">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase mb-3 w-full text-center">Original Ticket Snapshot</h3>
+                                {selectedTicket.ticketImage ? (
+                                    <img src={selectedTicket.ticketImage} alt="Proof" className="w-full object-contain shadow-lg border border-slate-700" />
+                                ) : (
+                                    <div className="flex-grow flex items-center justify-center text-gray-500 italic py-10">No Image Available</div>
+                                )}
+                            </div>
+                            <div className="lg:w-2/3 p-6 flex flex-col min-h-0">
+                                <div className="flex justify-between items-start mb-6 border-b border-slate-700 pb-4">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-white">Ticket #{selectedTicket.ticketNumber}</h2>
+                                        <p className="text-gray-400 text-sm">{new Date(selectedTicket.transactionDateTime).toLocaleString()}</p>
+                                    </div>
+                                    <button onClick={() => setSelectedTicket(null)} className="text-gray-400 hover:text-white">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
+                                        <p className="text-[10px] text-gray-500 uppercase">Bet Dates</p>
+                                        <p className="text-sm font-bold text-white truncate">{selectedTicket.betDates.join(', ')}</p>
+                                    </div>
+                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
+                                        <p className="text-[10px] text-gray-500 uppercase">Tracks</p>
+                                        <p className="text-sm font-bold text-white truncate" title={selectedTicket.tracks.join(', ')}>{selectedTicket.tracks.join(', ')}</p>
+                                    </div>
+                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
+                                        <p className="text-[10px] text-gray-500 uppercase">Grand Total</p>
+                                        <p className="text-lg font-bold text-green-400">${selectedTicket.grandTotal.toFixed(2)}</p>
+                                    </div>
+                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
+                                        <p className="text-[10px] text-gray-500 uppercase">Total Plays</p>
+                                        <p className="text-lg font-bold text-white">{selectedTicket.plays.length}</p>
+                                    </div>
+                                </div>
+
+                                {/* CHANGED: Specific height on mobile to ensure scrolling within flex column */}
+                                <div className="flex-grow overflow-y-auto bg-slate-900 rounded-lg border border-slate-700 min-h-[300px]">
+                                    <table className="w-full text-xs text-left text-gray-300">
+                                        <thead className="bg-slate-800 text-gray-500 uppercase font-bold sticky top-0">
+                                            <tr>
+                                                <th className="p-3">#</th>
+                                                <th className="p-3">Bet</th>
+                                                <th className="p-3">Mode</th>
+                                                <th className="p-3 text-right">Str</th>
+                                                <th className="p-3 text-right">Box</th>
+                                                <th className="p-3 text-right">Com</th>
+                                                <th className="p-3 text-right">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-800">
+                                            {selectedTicket.plays.map((play, i) => (
+                                                <tr key={i} className="hover:bg-slate-800/50">
+                                                    <td className="p-3">{i + 1}</td>
+                                                    <td className="p-3 font-bold font-mono text-white text-sm">{play.betNumber}</td>
+                                                    <td className="p-3">{play.gameMode}</td>
+                                                    <td className="p-3 text-right font-mono">{play.straightAmount ? play.straightAmount.toFixed(2) : '-'}</td>
+                                                    <td className="p-3 text-right font-mono">{play.boxAmount ? play.boxAmount.toFixed(2) : '-'}</td>
+                                                    <td className="p-3 text-right font-mono">{play.comboAmount ? play.comboAmount.toFixed(2) : '-'}</td>
+                                                    <td className="p-3 text-right font-bold text-green-400">
+                                                        ${calculateWinnings(play, {id:'mock', date:'', lotteryId:'', lotteryName:'', first:'', second:'', third:'', pick3:'', pick4:'', createdAt:''}, prizeTable).length > 0 ? 'WIN' : (play.totalAmount ? play.totalAmount.toFixed(2) : '-')}
+                                                    </td>
+                                                </tr>
+                                            ))}
                                         </tbody>
                                     </table>
                                 </div>
@@ -1540,7 +1297,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </div>
                 )}
 
-                {/* ADD RESULT MODAL */}
+                {/* ADD RESULT MODAL (WITH AUTO-FILL) */}
                 {isAddResultOpen && (
                     <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
                         <div className="bg-slate-800 w-full max-w-md p-6 rounded-xl border border-slate-600 shadow-2xl">
@@ -1576,11 +1333,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-xs text-purple-400 mb-1">Pick 3</label>
-                                        <input type="text" maxLength={3} value={newResultP3} onChange={e=>setNewResultP3(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-white font-mono" placeholder="000" />
+                                        <input type="text" maxLength={3} value={newResultP3} onChange={e=>handleP3Change(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-white font-mono" placeholder="000" />
                                     </div>
                                     <div>
                                         <label className="block text-xs text-orange-400 mb-1">Pick 4</label>
-                                        <input type="text" maxLength={4} value={newResultP4} onChange={e=>setNewResultP4(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-white font-mono" placeholder="0000" />
+                                        <input type="text" maxLength={4} value={newResultP4} onChange={e=>handleP4Change(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-white font-mono" placeholder="0000" />
                                     </div>
                                 </div>
                                 <div className="flex justify-end gap-3 mt-4">
@@ -1626,83 +1383,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
                             Upload Image from Gallery
                         </button>
-                    </div>
-                </div>
-            )}
-
-            {/* TICKET DETAIL MODAL */}
-            {selectedTicket && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50" onClick={() => setSelectedTicket(null)}>
-                    <div className="bg-slate-800 w-full max-w-5xl h-[90vh] overflow-hidden rounded-xl shadow-2xl flex flex-col lg:flex-row border border-slate-600" onClick={e => e.stopPropagation()}>
-                        <div className="lg:w-1/3 bg-black p-4 overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-700 flex flex-col items-center">
-                            <h3 className="text-sm font-bold text-gray-400 uppercase mb-3 w-full text-center">Original Ticket Snapshot</h3>
-                            {selectedTicket.ticketImage ? (
-                                <img src={selectedTicket.ticketImage} alt="Proof" className="w-full object-contain shadow-lg border border-slate-700" />
-                            ) : (
-                                <div className="flex-grow flex items-center justify-center text-gray-500 italic">No Image Available</div>
-                            )}
-                        </div>
-                        <div className="lg:w-2/3 p-6 flex flex-col overflow-hidden">
-                            <div className="flex justify-between items-start mb-6 border-b border-slate-700 pb-4">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-white">Ticket #{selectedTicket.ticketNumber}</h2>
-                                    <p className="text-gray-400 text-sm">{new Date(selectedTicket.transactionDateTime).toLocaleString()}</p>
-                                </div>
-                                <button onClick={() => setSelectedTicket(null)} className="text-gray-400 hover:text-white">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                                </button>
-                            </div>
-
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                                <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                    <p className="text-[10px] text-gray-500 uppercase">Bet Dates</p>
-                                    <p className="text-sm font-bold text-white truncate">{selectedTicket.betDates.join(', ')}</p>
-                                </div>
-                                <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                    <p className="text-[10px] text-gray-500 uppercase">Tracks</p>
-                                    <p className="text-sm font-bold text-white truncate" title={selectedTicket.tracks.join(', ')}>{selectedTicket.tracks.join(', ')}</p>
-                                </div>
-                                <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                    <p className="text-[10px] text-gray-500 uppercase">Grand Total</p>
-                                    <p className="text-lg font-bold text-green-400">${selectedTicket.grandTotal.toFixed(2)}</p>
-                                </div>
-                                <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                    <p className="text-[10px] text-gray-500 uppercase">Total Plays</p>
-                                    <p className="text-lg font-bold text-white">{selectedTicket.plays.length}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex-grow overflow-y-auto bg-slate-900 rounded-lg border border-slate-700">
-                                <table className="w-full text-xs text-left text-gray-300">
-                                    <thead className="bg-slate-800 text-gray-500 uppercase font-bold sticky top-0">
-                                        <tr>
-                                            <th className="p-3">#</th>
-                                            <th className="p-3">Bet</th>
-                                            <th className="p-3">Mode</th>
-                                            <th className="p-3 text-right">Str</th>
-                                            <th className="p-3 text-right">Box</th>
-                                            <th className="p-3 text-right">Com</th>
-                                            <th className="p-3 text-right">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-800">
-                                        {selectedTicket.plays.map((play, i) => (
-                                            <tr key={i} className="hover:bg-slate-800/50">
-                                                <td className="p-3">{i + 1}</td>
-                                                <td className="p-3 font-bold font-mono text-white text-sm">{play.betNumber}</td>
-                                                <td className="p-3">{play.gameMode}</td>
-                                                <td className="p-3 text-right font-mono">{play.straightAmount ? play.straightAmount.toFixed(2) : '-'}</td>
-                                                <td className="p-3 text-right font-mono">{play.boxAmount ? play.boxAmount.toFixed(2) : '-'}</td>
-                                                <td className="p-3 text-right font-mono">{play.comboAmount ? play.comboAmount.toFixed(2) : '-'}</td>
-                                                <td className="p-3 text-right font-bold text-green-400">
-                                                    ${calculateWinnings(play, {id:'mock', date:'', lotteryId:'', lotteryName:'', first:'', second:'', third:'', pick3:'', pick4:'', createdAt:''}, prizeTable).length > 0 ? 'WIN' : (play.totalAmount ? play.totalAmount.toFixed(2) : '-')}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
                     </div>
                 </div>
             )}
