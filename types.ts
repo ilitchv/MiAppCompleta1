@@ -82,6 +82,16 @@ export interface WinningResult {
     createdAt: string;
 }
 
+// --- AUDIT LOG ENTRY ---
+export interface AuditLogEntry {
+    id: string;
+    timestamp: string;
+    action: 'CREATE' | 'UPDATE' | 'DELETE';
+    targetId: string; // The ID of the result affected
+    details: string; // Description like "Changed 1st from 20 to 25" or "Deleted result"
+    user: string; // Usually 'Admin'
+}
+
 export type ServerHealth = 'checking' | 'offline' | 'db_error' | 'online';
 
 export interface TicketData {

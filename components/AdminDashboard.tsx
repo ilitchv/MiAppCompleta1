@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TicketData, WinningResult, PrizeTable, CalculationResult } from '../types';
+import { TicketData, WinningResult, PrizeTable, CalculationResult, AuditLogEntry } from '../types';
 import { localDbService } from '../services/localDbService';
 import { DEFAULT_PRIZE_TABLE, GAME_RULES_TEXT, RESULTS_CATALOG } from '../constants';
 import { calculateWinnings } from '../utils/prizeCalculator';
@@ -108,6 +108,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [isAddResultOpen, setIsAddResultOpen] = useState(false);
     const [viewResultsDate, setViewResultsDate] = useState(new Date().toISOString().split('T')[0]); // Date for VIEWING results
     
+    // DELETE & AUDIT STATE (NEW)
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [resultToDelete, setResultToDelete] = useState<string | null>(null);
+    const [deletePin, setDeletePin] = useState('');
+    const [isAuditLogOpen, setIsAuditLogOpen] = useState(false);
+    const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+
     // OCR STATE
     const [ocrImage, setOcrImage] = useState<string | null>(null);
     const [ocrText, setOcrText] = useState('');
@@ -476,11 +483,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setViewResultsDate(viewResultsDate); 
     };
 
-    const handleDeleteResult = (id: string) => {
-        if (confirm('Are you sure?')) {
-            localDbService.deleteResult(id);
-            loadResultsFromDb();
+    // --- DELETE / EDIT LOGIC WITH SECURITY ---
+    const handleDeleteInitiate = (id: string) => {
+        playSound('pop');
+        setResultToDelete(id);
+        setDeletePin('');
+        setIsDeleteModalOpen(true);
+    };
+
+    const handleEditInitiate = (result: WinningResult) => {
+        playSound('click');
+        setViewResultsDate(result.date);
+        setNewResultTrack(result.lotteryId);
+        setNewResult1st(result.first);
+        setNewResult2nd(result.second);
+        setNewResult3rd(result.third);
+        setNewResultP3(result.pick3);
+        setNewResultP4(result.pick4);
+        setIsAddResultOpen(true); // Opens the modal with pre-filled data (Acts as Upsert)
+    };
+
+    const handleConfirmDelete = () => {
+        if (deletePin === '198312') {
+            if (resultToDelete) {
+                localDbService.deleteResult(resultToDelete);
+                loadResultsFromDb();
+                playSound('delete');
+            }
+            setIsDeleteModalOpen(false);
+            setResultToDelete(null);
+            setDeletePin('');
+        } else {
+            playSound('error');
+            alert("INCORRECT PIN. ACCESS DENIED.");
+            setDeletePin('');
         }
+    };
+
+    const handleOpenAuditLog = () => {
+        setAuditLog(localDbService.getAuditLog());
+        setIsAuditLogOpen(true);
     };
 
     // --- OCR LOGIC ---
@@ -1020,10 +1062,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                     className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm outline-none focus:border-neon-cyan" 
                                 />
                             </div>
-                            <button onClick={() => setIsAddResultOpen(true)} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded shadow-lg flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                Add Manual Result
-                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={handleOpenAuditLog} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 font-bold rounded shadow border border-slate-600 flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                    View Log
+                                </button>
+                                <button onClick={() => setIsAddResultOpen(true)} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded shadow-lg flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    Add Manual Result
+                                </button>
+                            </div>
                         </div>
                         
                         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
@@ -1039,7 +1087,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                             <th className="p-4 text-center text-purple-400 w-24">pick_3</th>
                                             <th className="p-4 text-center text-orange-400 w-24">pick_4</th>
                                             <th className="p-4 text-right">Hits / Payout</th>
-                                            <th className="p-4 text-right w-12">Actions</th>
+                                            <th className="p-4 text-right w-24">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
@@ -1060,9 +1108,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                                         {payout > 0 ? `-$${payout.toFixed(2)}` : '-'}
                                                     </td>
                                                     <td className="p-4 text-right">
-                                                        <button onClick={() => handleDeleteResult(res.id)} className="text-red-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded">
-                                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                                                        </button>
+                                                        <div className="flex justify-end gap-1">
+                                                            <button onClick={() => handleEditInitiate(res)} className="text-slate-400 hover:text-white p-2 hover:bg-slate-600 rounded transition-colors" title="Edit">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                                                            </button>
+                                                            <button onClick={() => handleDeleteInitiate(res.id)} className="text-red-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded transition-colors" title="Delete">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
@@ -1075,6 +1128,78 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                             </div>
                         </div>
                     </>
+                )}
+
+                {/* DELETE CONFIRMATION MODAL */}
+                {isDeleteModalOpen && (
+                    <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
+                        <div className="bg-slate-900 border-2 border-red-600 rounded-xl p-6 w-full max-w-sm shadow-[0_0_50px_rgba(220,38,38,0.3)] animate-fade-in text-center">
+                            <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                            </div>
+                            <h3 className="text-xl font-bold text-red-500 uppercase tracking-widest mb-1">Security Clearance</h3>
+                            <p className="text-gray-400 text-sm mb-6">Enter PIN to authorize deletion.</p>
+                            
+                            <input 
+                                type="password" 
+                                autoFocus
+                                value={deletePin}
+                                onChange={e => setDeletePin(e.target.value)}
+                                className="w-full bg-black border border-red-900 rounded p-3 text-center text-2xl tracking-[0.5em] text-red-500 font-mono focus:border-red-500 outline-none mb-6"
+                                placeholder="******"
+                            />
+                            
+                            <div className="flex gap-3">
+                                <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded transition-colors">CANCEL</button>
+                                <button onClick={handleConfirmDelete} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-black font-bold rounded transition-colors shadow-lg shadow-red-900/50">CONFIRM</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* AUDIT LOG MODAL */}
+                {isAuditLogOpen && (
+                    <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[70]" onClick={() => setIsAuditLogOpen(false)}>
+                        <div className="bg-slate-900 w-full max-w-4xl h-[80vh] flex flex-col rounded-xl border border-slate-600 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                            <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-950">
+                                <h3 className="text-lg font-mono font-bold text-neon-cyan flex items-center gap-2">
+                                    <span className="w-2 h-2 bg-neon-cyan animate-pulse"></span> SYSTEM_AUDIT_LOG
+                                </h3>
+                                <button onClick={() => setIsAuditLogOpen(false)} className="text-gray-500 hover:text-white">✕</button>
+                            </div>
+                            <div className="flex-grow overflow-auto p-4 font-mono text-xs">
+                                <table className="w-full text-left text-gray-400">
+                                    <thead className="text-slate-500 border-b border-slate-800 uppercase">
+                                        <tr>
+                                            <th className="pb-2 pl-2">Timestamp</th>
+                                            <th className="pb-2">Action</th>
+                                            <th className="pb-2">User</th>
+                                            <th className="pb-2">Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800">
+                                        {auditLog.map((log, i) => (
+                                            <tr key={i} className="hover:bg-slate-800/50">
+                                                <td className="py-2 pl-2 text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</td>
+                                                <td className="py-2">
+                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                        log.action === 'CREATE' ? 'bg-green-500/20 text-green-400' :
+                                                        log.action === 'DELETE' ? 'bg-red-500/20 text-red-400' :
+                                                        'bg-blue-500/20 text-blue-400'
+                                                    }`}>
+                                                        {log.action}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 text-white">{log.user}</td>
+                                                <td className="py-2 text-gray-300">{log.details}</td>
+                                            </tr>
+                                        ))}
+                                        {auditLog.length === 0 && <tr><td colSpan={4} className="py-8 text-center opacity-50">-- END OF LOG --</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
                 {/* OCR TAB (RESTORED & ENHANCED) */}
