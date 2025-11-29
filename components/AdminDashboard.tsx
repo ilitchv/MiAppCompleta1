@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TicketData, WinningResult, PrizeTable, CalculationResult, AuditLogEntry } from '../types';
+import { TicketData, WinningResult, PrizeTable, CalculationResult, AuditLogEntry, Play } from '../types';
 import { localDbService } from '../services/localDbService';
 import { DEFAULT_PRIZE_TABLE, GAME_RULES_TEXT, RESULTS_CATALOG } from '../constants';
 import { calculateWinnings } from '../utils/prizeCalculator';
@@ -108,7 +108,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [isAddResultOpen, setIsAddResultOpen] = useState(false);
     const [viewResultsDate, setViewResultsDate] = useState(new Date().toISOString().split('T')[0]); // Date for VIEWING results
     
-    // DELETE & AUDIT STATE (NEW)
+    // DELETE & AUDIT STATE
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [resultToDelete, setResultToDelete] = useState<string | null>(null);
     const [deletePin, setDeletePin] = useState('');
@@ -137,6 +137,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [calcIsNY, setCalcIsNY] = useState(true);
     const [activeRule, setActiveRule] = useState<number | null>(null);
 
+    // SIMULATOR LAB STATE
+    const [simBet, setSimBet] = useState('');
+    const [simMode, setSimMode] = useState('Pick 3');
+    const [simStr, setSimStr] = useState('');
+    const [simBox, setSimBox] = useState('');
+    const [simCom, setSimCom] = useState('');
+    const [simRes1, setSimRes1] = useState('');
+    const [simRes2, setSimRes2] = useState('');
+    const [simRes3, setSimRes3] = useState('');
+    const [simResP3, setSimResP3] = useState('');
+    const [simResP4, setSimResP4] = useState('');
+    const [simOutput, setSimOutput] = useState<CalculationResult[] | null>(null);
+
     // New Result Form Variables
     const [newResultTrack, setNewResultTrack] = useState('');
     const [newResult1st, setNewResult1st] = useState('');
@@ -145,7 +158,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [newResultP3, setNewResultP3] = useState('');
     const [newResultP4, setNewResultP4] = useState('');
 
-    // Flatten tracks for dropdown using RESULTS_CATALOG to ensure ID consistency
+    // Flatten tracks for dropdown using RESULTS_CATALOG
     const allTracks = RESULTS_CATALOG.map(c => ({
         id: c.id,
         name: `${c.lottery} - ${c.draw}`,
@@ -208,35 +221,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setFilteredTickets(res);
     }, [searchTerm, dateFilter, tickets]);
 
-    // --- WINNERS AUDIT LOGIC (CORE) ---
+    // --- WINNERS AUDIT LOGIC ---
     const auditStats = useMemo(() => {
         let totalPayout = 0;
         const winningTicketsMap = new Map<string, boolean>();
         const winnersList: any[] = [];
         const integrityBreaches: any[] = [];
-        const resultsLiabilityMap: Record<string, number> = {}; // ResultID -> Payout Amount
 
         tickets.forEach(ticket => {
             const ticketTime = new Date(ticket.transactionDateTime).getTime();
 
             ticket.plays.forEach(play => {
-                // LIFE CYCLE: Iterate over all scheduled dates for this ticket (Futures supported)
                 ticket.betDates.forEach(date => {
-                    // Iterate over all tracks selected
                     ticket.tracks.forEach(trackName => {
                         const resultId = TRACK_MAP[trackName];
-                        if (!resultId) return; // Skip if track not mapped
+                        if (!resultId) return;
 
-                        // STRICT MATCHING: Result must match Track ID AND Date (not ticket date, but bet date)
                         const result = results.find(r => r.lotteryId === resultId && r.date === date);
 
                         if (result) {
-                            // --- INTEGRITY CHECK ---
                             const resultTime = new Date(result.createdAt).getTime();
-                            // Allow 60s tolerance for clock drifts. Ticket must be sold BEFORE result created.
                             const integrityOk = ticketTime < (resultTime + 60000); 
 
-                            // --- CALCULATION ---
                             const wins = calculateWinnings(play, result, prizeTable);
                             
                             if (wins.length > 0) {
@@ -246,7 +252,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                     const winnerEntry = {
                                         id: `${ticket.ticketNumber}-${play.jugadaNumber}-${trackName}-${date}`,
                                         ticketNumber: ticket.ticketNumber,
-                                        date: date, // The date it played for
+                                        date: date, 
                                         track: trackName,
                                         betNumber: play.betNumber,
                                         gameMode: play.gameMode,
@@ -263,31 +269,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                     if (integrityOk) {
                                         totalPayout += totalWinForPlay;
                                         winningTicketsMap.set(ticket.ticketNumber, true);
-                                        
-                                        // Update Liability for this specific result entry
-                                        if (!resultsLiabilityMap[result.id]) resultsLiabilityMap[result.id] = 0;
-                                        resultsLiabilityMap[result.id] += totalWinForPlay;
                                     } else {
                                         integrityBreaches.push(winnerEntry);
                                     }
                                 }
                             }
                         }
-                        // If no result found, Play is PENDING/ACTIVE.
                     });
                 });
             });
         });
 
-        // Sort winners by date desc
         winnersList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         return {
             totalPayout,
             winningTicketsCount: winningTicketsMap.size,
             winnersList,
-            integrityBreaches,
-            resultsLiabilityMap
+            integrityBreaches
         };
     }, [tickets, results, prizeTable]);
 
@@ -441,26 +440,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setTimeout(() => osc.stop(), 100);
     };
 
-    // --- AUTO-CALCULATION HANDLERS ---
-    const handleP3Change = (val: string) => {
-        setNewResultP3(val);
-        // Clean non-digits
-        const clean = val.replace(/\D/g, '');
-        if (clean.length >= 2) {
-            setNewResult1st(clean.slice(-2));
-        }
-    };
-
-    const handleP4Change = (val: string) => {
-        setNewResultP4(val);
-        // Clean non-digits
-        const clean = val.replace(/\D/g, '');
-        if (clean.length >= 2) {
-            setNewResult2nd(clean.slice(0, 2));
-            setNewResult3rd(clean.slice(-2));
-        }
-    };
-
+    // --- MANUAL SAVE RESULT ---
     const handleSaveResult = (e: React.FormEvent) => {
         e.preventDefault();
         // Allow saving if at least P3 or P4 or 1st is present
@@ -499,44 +479,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         loadResultsFromDb();
         setIsAddResultOpen(false);
         setNewResult1st(''); setNewResult2nd(''); setNewResult3rd(''); setNewResultP3(''); setNewResultP4('');
-        // Auto-switch view to the date we just added for
-        setViewResultsDate(viewResultsDate); 
     };
 
-    // --- DELETE / EDIT LOGIC WITH SECURITY ---
+    // --- DELETE / EDIT LOGIC ---
+    const handleEditInitiate = (res: WinningResult) => {
+        setViewResultsDate(res.date);
+        setNewResultTrack(res.lotteryId);
+        setNewResult1st(res.first || '');
+        setNewResult2nd(res.second || '');
+        setNewResult3rd(res.third || '');
+        setNewResultP3(res.pick3 || '');
+        setNewResultP4(res.pick4 || '');
+        setIsAddResultOpen(true);
+    };
+
     const handleDeleteInitiate = (id: string) => {
-        playSound('pop');
         setResultToDelete(id);
         setDeletePin('');
         setIsDeleteModalOpen(true);
     };
 
-    const handleEditInitiate = (result: WinningResult) => {
-        playSound('click');
-        setViewResultsDate(result.date);
-        setNewResultTrack(result.lotteryId);
-        setNewResult1st(result.first);
-        setNewResult2nd(result.second);
-        setNewResult3rd(result.third);
-        setNewResultP3(result.pick3);
-        setNewResultP4(result.pick4);
-        setIsAddResultOpen(true); // Opens the modal with pre-filled data (Acts as Upsert)
-    };
-
     const handleConfirmDelete = () => {
-        if (deletePin === '198312') {
-            if (resultToDelete) {
-                localDbService.deleteResult(resultToDelete);
-                loadResultsFromDb();
-                playSound('delete');
-            }
+        if (deletePin !== '198312') {
+            alert('Invalid PIN');
+            return;
+        }
+        if (resultToDelete) {
+            localDbService.deleteResult(resultToDelete);
+            loadResultsFromDb();
             setIsDeleteModalOpen(false);
             setResultToDelete(null);
-            setDeletePin('');
-        } else {
-            playSound('error');
-            alert("INCORRECT PIN. ACCESS DENIED.");
-            setDeletePin('');
+            playSound('delete');
         }
     };
 
@@ -552,7 +525,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             try {
                 const base64 = await fileToBase64(file);
                 setOcrImage(base64);
-                // DO NOT AUTO PROCESS ON UPLOAD NOW - Wait for user choice
             } catch (err) {
                 console.error(err);
                 alert("Error reading file.");
@@ -569,13 +541,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 if (file) {
                     const base64 = await fileToBase64(file);
                     setOcrImage(base64);
-                    // DO NOT AUTO PROCESS ON PASTE NOW - Wait for user choice
                 }
             }
         }
     };
 
-    // CLOUD OCR (GEMINI)
     const handleProcessOcr = async (base64: string) => {
         setIsProcessingOcr(true);
         setOcrResults([]);
@@ -599,7 +569,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         }
     };
 
-    // LOCAL OCR (TESSERACT)
     const handleProcessLocalOcr = async (base64: string) => {
         setIsProcessingOcr(true);
         setOcrResults([]);
@@ -659,10 +628,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         const trackObj = allTracks.find(t => t.id === row.targetId);
         if (!trackObj) return;
 
-        // Use robust parser
+        // Robust Parser logic
         let { f, s, t, p3, p4 } = parseRowValue(row.value);
 
-        // Auto-fill Venezuela if missing
         if ((!f || !s || !t) && (p3 || p4)) {
             if (!f && p3 && p3.length >= 2) f = p3.slice(-2);
             if (!s && p4 && p4.length >= 2) s = p4.slice(0, 2);
@@ -673,7 +641,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             id: `${ocrDate}_${row.targetId}`, 
             date: ocrDate,                    
             lotteryId: row.targetId,
-            lotteryName: trackObj.originalName, // Use Original Name from Catalog
+            lotteryName: trackObj.originalName, 
             first: f, second: s, third: t,
             pick3: p3, pick4: p4,
             createdAt: new Date().toISOString()
@@ -681,52 +649,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
 
         localDbService.saveResult(newResult);
         setOcrResults(prev => prev.map(r => r.id === row.id ? { ...r, status: 'saved' } : r));
-        loadResultsFromDb(); // Background refresh
-        setViewResultsDate(ocrDate); // Auto-switch view
+        loadResultsFromDb(); 
+        setViewResultsDate(ocrDate);
     };
 
-    // --- BATCH SAVE FOR OCR (FIXED & INFORMATIVE) ---
+    // --- BATCH SAVE FOR OCR ---
     const handleSaveAllOcrRows = () => {
         const pendingRows = ocrResults.filter(r => r.status !== 'saved');
-        
-        if (pendingRows.length === 0) {
-            alert("No pending rows to save.");
-            return;
-        }
+        if (pendingRows.length === 0) return alert("No pending rows to save.");
 
-        // Count how many pending rows have a valid Target ID (Lottery selected)
         const validPendingRows = pendingRows.filter(r => r.targetId && r.targetId.trim() !== '');
-        
-        // CRITICAL CHECK: If user hits "Save All" but hasn't mapped anything, WARN THEM.
-        if (validPendingRows.length === 0) {
-            alert(`Found ${pendingRows.length} pending rows, but NONE have a Lottery (Map) selected.\n\nPlease select a Lottery for the rows you want to save.`);
-            return;
-        }
+        if (validPendingRows.length === 0) return alert(`Found ${pendingRows.length} pending rows, but NONE have a Lottery (Map) selected.`);
 
-        // Direct map approach - Safer state update
         let savedCount = 0;
         const newResults = ocrResults.map(row => {
-            // Skip already saved
             if (row.status === 'saved') return row;
-
-            // Skip if no target ID (leave as pending)
-            if (!row.targetId || !row.targetId.trim()) {
-                return row; 
-            }
-
-            // Skip if no value
-            if (!row.value || !row.value.trim()) {
-                return row;
-            }
+            if (!row.targetId || !row.targetId.trim() || !row.value || !row.value.trim()) return row;
 
             const trackObj = allTracks.find(t => t.id === row.targetId);
             if (!trackObj) return row; 
 
-            // Parse and Save
             try {
                 let { f, s, t, p3, p4 } = parseRowValue(row.value);
-
-                // Auto-fill Venezuela if missing
                 if ((!f || !s || !t) && (p3 || p4)) {
                     if (!f && p3 && p3.length >= 2) f = p3.slice(-2);
                     if (!s && p4 && p4.length >= 2) s = p4.slice(0, 2);
@@ -742,35 +686,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     createdAt: new Date().toISOString()
                 };
 
-                // Save Sync
                 localDbService.saveResult(resultEntry);
                 savedCount++;
-                
-                // Return updated row status
                 return { ...row, status: 'saved' as const };
             } catch (e) {
-                console.error("Row save failed", e);
                 return row;
             }
         });
 
         if (savedCount > 0) {
             setOcrResults(newResults);
-            loadResultsFromDb(); // Refresh the main list
-            
-            // AUTO-SWITCH VIEW TO OCR DATE to show user the results
+            loadResultsFromDb(); 
             setViewResultsDate(ocrDate);
-            
             setSuccessCount(savedCount);
             setShowSuccessOverlay(true);
             playSound('success');
             setTimeout(() => setShowSuccessOverlay(false), 2500);
-            
-            // If we saved some but not all, verify if there are leftovers
-            const remaining = newResults.filter(r => r.status !== 'saved').length;
-            if (remaining > 0) {
-                console.log(`${remaining} rows skipped due to missing Map/Value.`);
-            }
         }
     };
 
@@ -785,34 +716,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         localDbService.savePrizeTable(newTable);
     };
 
-    const handleRunCalculation = () => {
-        setIsCalculating(true);
-        setTimeout(() => {
-            const detectedWinners: CalculationResult[] = [];
-            tickets.forEach(ticket => {
-                ticket.plays.forEach(play => {
-                    ticket.betDates.forEach(date => {
-                        ticket.tracks.forEach(trackId => {
-                            const result = results.find(r => r.date === date && r.lotteryId === trackId);
-                            if (result) {
-                                const wins = calculateWinnings(play, result, prizeTable);
-                                wins.forEach(w => {
-                                    detectedWinners.push({
-                                        ...w,
-                                        ticketNumber: ticket.ticketNumber,
-                                        playNumber: play.jugadaNumber
-                                    });
-                                });
-                            }
-                        });
-                    });
-                });
-            });
-            setWinners(detectedWinners);
-            setIsCalculating(false);
-        }, 500);
-    };
-
     // --- MANUAL CALCULATOR LOGIC ---
     const getCalculatedPayout = () => {
         const gameTable = prizeTable[calcGame];
@@ -823,12 +726,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         return isNaN(wagerVal) ? 0 : wagerVal * multiplier;
     };
 
+    // --- SIMULATOR LOGIC ---
+    const handleRunSimulator = () => {
+        const mockPlay: Play = {
+            id: 0,
+            betNumber: simBet,
+            gameMode: simMode,
+            straightAmount: simStr ? parseFloat(simStr) : null,
+            boxAmount: simBox ? parseFloat(simBox) : null,
+            comboAmount: simCom ? parseFloat(simCom) : null,
+        };
+
+        const mockResult: WinningResult = {
+            id: 'mock',
+            date: 'today',
+            lotteryId: 'mock-track',
+            lotteryName: 'Simulation Track', 
+            first: simRes1,
+            second: simRes2,
+            third: simRes3,
+            pick3: simResP3,
+            pick4: simResP4,
+            createdAt: new Date().toISOString()
+        };
+
+        const wins = calculateWinnings(mockPlay, mockResult, prizeTable);
+        setSimOutput(wins);
+        playSound(wins.length > 0 ? 'success' : 'error');
+    };
+
     const totalSales = filteredTickets.reduce((acc, t) => acc + t.grandTotal, 0);
     const totalPlays = filteredTickets.reduce((acc, t) => acc + t.plays.length, 0);
-    
-    // Net Profit Calculation for Winners Tab
     const netProfit = totalSales - auditStats.totalPayout;
-
+    
     return (
         <div className="min-h-screen bg-slate-900 text-gray-200 font-sans" onPaste={activeTab === 'ocr' ? handlePaste : undefined}>
             {/* Header */}
@@ -960,7 +890,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                                     <td className="p-3 font-mono text-neon-cyan">{play.parentTicketNumber}</td>
                                                     <td className="p-3">{new Date(play.parentTransactionDate).toLocaleString()}</td>
                                                     <td className="p-3 text-center">{play.jugadaNumber}</td>
-                                                    <td className="p-3 font-mono text-slate-500">{new Date(play.finalTimestamp as string).toLocaleTimeString()}</td>
+                                                    <td className="p-3 font-mono text-slate-500">{new Date(play.finalTimestamp as string).toLocaleTimeString()}</p>
                                                     <td className="p-3 max-w-[150px] truncate" title={play.parentBetDates.join(', ')}>{play.parentBetDates.join(', ')}</td>
                                                     <td className="p-3 max-w-[200px] truncate" title={play.parentTracks.join(', ')}>{play.parentTracks.join(', ')}</td>
                                                     <td className="p-3 font-bold font-mono text-white text-base">{play.betNumber}</td>
@@ -979,415 +909,566 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </>
                 )}
 
-                {/* WINNERS TAB (NEW) */}
-                {activeTab === 'winners' && (
-                    <>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
-                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Total Payout</p>
-                                <p className="text-3xl font-bold text-neon-green">${auditStats.totalPayout.toFixed(2)}</p>
+                {/* RESULTS TAB (RESTORING COMPACT TABLE) */}
+                {activeTab === 'results' && (
+                    <div className="space-y-6">
+                        {/* Toolbar */}
+                        <div className="flex flex-wrap gap-4 items-center justify-between bg-slate-800 p-4 rounded-xl border border-slate-700">
+                            <div className="flex items-center gap-4">
+                                <input type="date" value={viewResultsDate} onChange={e => setViewResultsDate(e.target.value)} className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white outline-none focus:border-neon-cyan text-sm" />
+                                <input type="text" placeholder="Filter by Name..." value={resultsSearch} onChange={e => setResultsSearch(e.target.value)} className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white outline-none focus:border-neon-cyan text-sm w-48" />
                             </div>
-                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
-                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Winning Tickets</p>
-                                <p className="text-3xl font-bold text-white">{auditStats.winningTicketsCount}</p>
-                            </div>
-                            <div className={`bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden ${netProfit < 0 ? 'border-red-500/50' : 'border-green-500/50'}`}>
-                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Net Profit</p>
-                                <p className={`text-3xl font-bold ${netProfit < 0 ? 'text-red-500' : 'text-blue-400'}`}>${netProfit.toFixed(2)}</p>
+                            <div className="flex gap-3">
+                                <button onClick={handleOpenAuditLog} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded font-bold text-xs border border-slate-600">
+                                    Audit Log
+                                </button>
+                                <button onClick={() => { setIsAddResultOpen(true); }} className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold text-xs flex items-center gap-1 shadow-lg shadow-green-500/20">
+                                    <span className="text-lg leading-none">+</span> Add Result
+                                </button>
                             </div>
                         </div>
 
+                        {/* Compact Table Grid */}
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left text-gray-300">
+                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold border-b border-slate-700 text-gray-500">
+                                        <tr>
+                                            <th className="p-4 w-1/4">Lotería</th>
+                                            <th className="p-4 text-center text-blue-400 w-20">1st</th>
+                                            <th className="p-4 text-center w-20">2nd</th>
+                                            <th className="p-4 text-center w-20">3rd</th>
+                                            <th className="p-4 text-center text-purple-400 w-24">Pick 3</th>
+                                            <th className="p-4 text-center text-orange-400 w-24">Pick 4</th>
+                                            <th className="p-4 text-right w-12">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-700">
+                                        {displayedResults.map(res => (
+                                            <tr key={res.id} className="hover:bg-slate-700/50 transition-colors">
+                                                <td className="p-4 font-bold text-white">
+                                                    {res.lotteryName} <span className="text-xs font-normal text-slate-500 ml-1">({res.lotteryId.split('/').pop()})</span>
+                                                </td>
+                                                <td className="p-4 text-center font-mono font-bold text-lg text-blue-400">{res.first || '---'}</td>
+                                                <td className="p-4 text-center font-mono text-base">{res.second || '---'}</td>
+                                                <td className="p-4 text-center font-mono text-base">{res.third || '---'}</td>
+                                                <td className="p-4 text-center font-mono text-purple-400">{res.pick3 || '---'}</td>
+                                                <td className="p-4 text-center font-mono text-orange-400">{res.pick4 || '---'}</td>
+                                                <td className="p-4 text-right flex justify-end gap-2">
+                                                    <button onClick={() => handleEditInitiate(res)} className="text-blue-400 hover:text-blue-300 p-2 hover:bg-blue-500/10 rounded">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                                    </button>
+                                                    <button onClick={() => handleDeleteInitiate(res.id)} className="text-red-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {displayedResults.length === 0 && (
+                                            <tr><td colSpan={7} className="p-12 text-center text-gray-500">No results found for {viewResultsDate}.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* WINNERS TAB (UNCHANGED) */}
+                {activeTab === 'winners' && (
+                    <div className="space-y-6">
+                        {/* Stats Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Total Payout Liability</p>
+                                <p className="text-3xl font-bold text-red-400">${auditStats.totalPayout.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Net Profit</p>
+                                <p className={`text-3xl font-bold ${netProfit >= 0 ? 'text-green-400' : 'text-red-500'}`}>${netProfit.toFixed(2)}</p>
+                            </div>
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Winning Tickets</p>
+                                <p className="text-3xl font-bold text-white">{auditStats.winningTicketsCount}</p>
+                            </div>
+                        </div>
+
+                        {/* Integrity Alert */}
                         {auditStats.integrityBreaches.length > 0 && (
-                            <div className="bg-red-900/30 border border-red-500 p-4 rounded-xl flex items-start gap-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 mt-1"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                            <div className="bg-red-900/20 border border-red-500 rounded-xl p-4 flex items-center gap-4 animate-pulse">
+                                <div className="p-3 bg-red-500 rounded-full text-white font-bold">!</div>
                                 <div>
-                                    <h3 className="font-bold text-red-500">Integrity Breach Detected</h3>
-                                    <p className="text-sm text-red-200">Found {auditStats.integrityBreaches.length} winning tickets sold AFTER result declaration. Marked as VOID.</p>
+                                    <h4 className="text-red-500 font-bold text-lg">Integrity Breach Detected</h4>
+                                    <p className="text-red-300 text-sm">Found {auditStats.integrityBreaches.length} tickets sold AFTER results were posted.</p>
                                 </div>
                             </div>
                         )}
 
+                        {/* Winners Table */}
                         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left text-gray-300">
-                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold border-b border-slate-700 text-gray-500">
+                            <div className="p-4 border-b border-slate-700 bg-slate-900/50">
+                                <h3 className="font-bold text-white">Winners Feed</h3>
+                            </div>
+                            <div className="overflow-x-auto max-h-[600px]">
+                                <table className="w-full text-sm text-left text-slate-400">
+                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold border-b border-slate-700 sticky top-0 z-10 backdrop-blur-md">
                                         <tr>
-                                            <th className="p-4">Status</th>
                                             <th className="p-4">Ticket</th>
-                                            <th className="p-4">Date / Track</th>
-                                            <th className="p-4">Match</th>
-                                            <th className="p-4">Time Gap</th>
+                                            <th className="p-4">Date</th>
+                                            <th className="p-4">Track</th>
+                                            <th className="p-4">Play</th>
+                                            <th className="p-4">Match Type</th>
                                             <th className="p-4 text-right">Prize</th>
+                                            <th className="p-4 text-center">Status</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
                                         {auditStats.winnersList.map((win, idx) => (
-                                            <tr key={win.id || idx} className="hover:bg-slate-700/50">
-                                                <td className="p-4">
-                                                    {win.integrityOk ? (
-                                                        <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-bold uppercase border border-green-500/30">PAID</span>
-                                                    ) : (
-                                                        <span className="px-2 py-1 rounded bg-red-500/20 text-red-500 text-xs font-bold uppercase border border-red-500/30">VOID</span>
-                                                    )}
-                                                </td>
+                                            <tr key={idx} className="hover:bg-slate-700/50 transition-colors">
                                                 <td className="p-4 font-mono text-neon-cyan">{win.ticketNumber}</td>
-                                                <td className="p-4 text-xs">
-                                                    <div className="font-bold text-white">{win.track}</div>
-                                                    <div className="text-slate-500">{win.date}</div>
-                                                </td>
-                                                <td className="p-4 text-xs">
-                                                    <div className="flex gap-2">
-                                                        <span className="font-mono text-white">Bet: {win.betNumber}</span>
-                                                        <span className="font-mono text-green-400">Res: {win.resultNumbers}</span>
-                                                    </div>
-                                                    <div className="text-slate-500 mt-1">{win.gameMode} ({win.matchType})</div>
-                                                </td>
-                                                <td className="p-4 text-xs font-mono text-slate-400">
-                                                    {win.timeGapSeconds > 0 ? (
-                                                        <span className="text-green-500">Sold {Math.abs(win.timeGapSeconds)}s before</span>
+                                                <td className="p-4">{win.date}</td>
+                                                <td className="p-4 text-white text-xs">{win.track}</td>
+                                                <td className="p-4 font-bold text-white">{win.betNumber} <span className="text-xs text-slate-500 font-normal">({win.gameMode})</span></td>
+                                                <td className="p-4 text-xs">{win.matchType} <span className="text-slate-500">vs {win.resultNumbers}</span></td>
+                                                <td className="p-4 text-right font-bold text-green-400">${win.prize.toFixed(2)}</td>
+                                                <td className="p-4 text-center">
+                                                    {win.integrityOk ? (
+                                                        <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-[10px] font-bold">VALID</span>
                                                     ) : (
-                                                        <span className="text-red-500 font-bold">Sold {Math.abs(win.timeGapSeconds)}s AFTER</span>
+                                                        <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-[10px] font-bold">LATE ({win.timeGapSeconds}s)</span>
                                                     )}
                                                 </td>
-                                                <td className="p-4 text-right font-bold text-neon-green text-lg">${win.prize.toFixed(2)}</td>
                                             </tr>
                                         ))}
                                         {auditStats.winnersList.length === 0 && (
-                                            <tr><td colSpan={6} className="p-12 text-center text-gray-500">No winners found.</td></tr>
+                                            <tr><td colSpan={7} className="p-8 text-center text-slate-500">No winners found yet.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
-                    </>
+                    </div>
                 )}
 
-                {/* RESULTS TAB (RESTRUCTURED) */}
-                {activeTab === 'results' && (
-                    <>
-                        <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-                            <div className="flex items-center gap-2">
-                                <input 
-                                    type="text" 
-                                    placeholder="Search Lottery..." 
-                                    value={resultsSearch}
-                                    onChange={e => setResultsSearch(e.target.value)}
-                                    className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm outline-none focus:border-neon-cyan"
-                                />
-                                <input 
-                                    type="date" 
-                                    required 
-                                    value={viewResultsDate} 
-                                    onChange={e=>setViewResultsDate(e.target.value)} 
-                                    className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm outline-none focus:border-neon-cyan" 
-                                />
+                {/* OCR TAB (RESTORING SPLIT VIEW) */}
+                {activeTab === 'ocr' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-140px)]">
+                        {/* LEFT: CONTROLS & PREVIEW */}
+                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex flex-col items-center gap-4 h-full">
+                            <div className="w-full flex justify-center mb-2">
+                                <div className="flex items-center gap-2 bg-black/30 p-2 rounded-lg border border-slate-600">
+                                    <label className="text-xs font-bold text-neon-cyan uppercase">FECHA DE CARGA:</label>
+                                    <input 
+                                        type="date" 
+                                        value={ocrDate} 
+                                        onChange={(e) => setOcrDate(e.target.value)} 
+                                        className="bg-slate-700 border border-slate-600 rounded p-1 text-white text-sm outline-none focus:border-neon-cyan" 
+                                    />
+                                </div>
                             </div>
-                            <div className="flex gap-2">
-                                <button onClick={handleOpenAuditLog} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 font-bold rounded shadow border border-slate-600 flex items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                                    View Log
+
+                            {ocrImage ? (
+                                <div className="relative w-full max-w-lg">
+                                    <img src={`data:image/jpeg;base64,${ocrImage}`} alt="OCR Preview" className="rounded-lg border border-slate-600 max-h-[200px] mx-auto object-contain" />
+                                    <button onClick={() => { setOcrImage(null); setOcrResults([]); }} className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div 
+                                    onDragOver={(e) => e.preventDefault()}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        const file = e.dataTransfer.files[0];
+                                        if (file) {
+                                            const event = { target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>;
+                                            handleOcrFileChange(event);
+                                        }
+                                    }}
+                                    onClick={() => ocrFileInputRef.current?.click()}
+                                    className="w-full p-10 border-2 border-dashed border-slate-600 rounded-lg hover:border-neon-cyan transition-colors cursor-pointer flex flex-col items-center gap-2"
+                                >
+                                    <svg className="w-10 h-10 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    <p className="text-sm font-bold text-slate-300">Arrastra imágenes. Previsualiza y guarda.</p>
+                                    <button className="px-4 py-1 bg-slate-700 rounded text-xs text-white mt-2">Choose Files</button>
+                                </div>
+                            )}
+                            <input type="file" ref={ocrFileInputRef} accept="image/*" className="hidden" onChange={handleOcrFileChange} />
+                            
+                            <div className="flex gap-4 w-full max-w-lg justify-center flex-wrap">
+                                {ocrImage && (
+                                    <button 
+                                        onClick={() => ocrImage && handleProcessOcr(ocrImage)}
+                                        disabled={isProcessingOcr}
+                                        className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded shadow disabled:opacity-50"
+                                    >
+                                        {isProcessingOcr ? 'Processing...' : 'Ejecutar OCR Imagen'}
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={handleProcessText}
+                                    disabled={!ocrText.trim() || isProcessingOcr}
+                                    className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded shadow disabled:opacity-50"
+                                >
+                                    {isProcessingOcr ? 'Processing...' : 'Procesar Texto'}
                                 </button>
-                                <button onClick={() => setIsAddResultOpen(true)} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded shadow-lg flex items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                    Add Manual Result
-                                </button>
+                                <button onClick={() => { setOcrImage(null); setOcrText(''); setOcrResults([]); }} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded font-bold">Limpiar todo</button>
                             </div>
+                            
+                            <textarea 
+                                value={ocrText}
+                                onChange={(e) => setOcrText(e.target.value)}
+                                className="w-full max-w-3xl h-24 bg-black/30 border border-slate-700 rounded p-2 text-xs font-mono text-green-400 focus:border-neon-cyan outline-none" 
+                                placeholder="Pega aquí el texto tabulado (ej.: 'ANGUILLA 10AM	23	70	69	---	---')"
+                            />
                         </div>
-                        
-                        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-                            <div className="overflow-x-auto">
+
+                        {/* RIGHT: STAGING TABLE */}
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col h-full shadow-lg">
+                            <div className="p-4 border-b border-slate-700 bg-slate-900/50 flex justify-between items-center">
+                                <h3 className="font-bold text-white uppercase tracking-wider">Staging Area ({ocrResults.length})</h3>
+                                {ocrResults.length > 0 && (
+                                    <button 
+                                        onClick={handleSaveAllOcrRows}
+                                        disabled={ocrResults.filter(r => r.status !== 'saved').length === 0}
+                                        className="px-4 py-2 bg-neon-green hover:bg-green-400 text-black font-bold rounded shadow-lg shadow-neon-green/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2 transition-all"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                        SAVE ALL ({ocrResults.filter(r => r.status !== 'saved').length})
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex-1 overflow-y-auto">
                                 <table className="w-full text-sm text-left text-gray-300">
-                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold border-b border-slate-700 text-gray-500">
+                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold text-green-400 border-b border-slate-700 sticky top-0">
                                         <tr>
-                                            <th className="p-4 text-center w-32">Date</th>
-                                            <th className="p-4 w-1/4">Lotería</th>
-                                            <th className="p-4 text-center text-blue-400 w-20">first</th>
-                                            <th className="p-4 text-center w-20">second</th>
-                                            <th className="p-4 text-center w-20">third</th>
-                                            <th className="p-4 text-center text-purple-400 w-24">pick_3</th>
-                                            <th className="p-4 text-center text-orange-400 w-24">pick_4</th>
-                                            <th className="p-4 text-right">Hits / Payout</th>
-                                            <th className="p-4 text-right w-24">Actions</th>
+                                            <th className="p-4 w-1/4">Abbrev.</th>
+                                            <th className="p-4 w-1/4">Map</th>
+                                            <th className="p-4 w-1/6">Detected</th>
+                                            <th className="p-4 w-1/6">Value</th>
+                                            <th className="p-4 text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
-                                        {displayedResults.map(res => {
-                                            const payout = auditStats.resultsLiabilityMap[res.id] || 0;
-                                            return (
-                                                <tr key={res.id} className="hover:bg-slate-700/50">
-                                                    <td className="p-4 text-center font-mono text-xs text-gray-400">{res.date}</td>
-                                                    <td className="p-4 font-bold text-white">
-                                                        {res.lotteryName} <span className="text-xs font-normal text-slate-500 ml-1">({res.lotteryId.split('/').pop()})</span>
-                                                    </td>
-                                                    <td className="p-4 text-center font-mono font-bold text-lg text-blue-400">{res.first || '---'}</td>
-                                                    <td className="p-4 text-center font-mono text-base">{res.second || '---'}</td>
-                                                    <td className="p-4 text-center font-mono text-base">{res.third || '---'}</td>
-                                                    <td className="p-4 text-center font-mono text-purple-400">{res.pick3 || '---'}</td>
-                                                    <td className="p-4 text-center font-mono text-orange-400">{res.pick4 || '---'}</td>
-                                                    <td className={`p-4 text-right font-mono font-bold ${payout > 0 ? 'text-red-400' : 'text-slate-500'}`}>
-                                                        {payout > 0 ? `-$${payout.toFixed(2)}` : '-'}
-                                                    </td>
-                                                    <td className="p-4 text-right">
-                                                        <div className="flex justify-end gap-1">
-                                                            <button onClick={() => handleEditInitiate(res)} className="text-slate-400 hover:text-white p-2 hover:bg-slate-600 rounded transition-colors" title="Edit">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                                                            </button>
-                                                            <button onClick={() => handleDeleteInitiate(res.id)} className="text-red-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded transition-colors" title="Delete">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                        {displayedResults.length === 0 && (
-                                            <tr><td colSpan={9} className="p-12 text-center text-gray-500">No results found for {viewResultsDate}.</td></tr>
+                                        {ocrResults.map(row => (
+                                            <tr key={row.id} className={row.status === 'saved' ? 'opacity-50 bg-green-900/10' : 'hover:bg-slate-700/30'}>
+                                                <td className="p-4 font-bold text-white uppercase">{row.source}</td>
+                                                <td className="p-4">
+                                                    <select 
+                                                        value={row.targetId} 
+                                                        onChange={(e) => handleOcrRowChange(row.id, 'targetId', e.target.value)}
+                                                        disabled={row.status === 'saved'}
+                                                        className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white outline-none focus:border-neon-cyan text-xs"
+                                                    >
+                                                        <option value="">—</option>
+                                                        {allTracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                    </select>
+                                                </td>
+                                                <td className="p-4 font-mono text-white">{row.value}</td>
+                                                <td className="p-4">
+                                                    <input 
+                                                        type="text" 
+                                                        value={row.value} 
+                                                        onChange={(e) => handleOcrRowChange(row.id, 'value', e.target.value)}
+                                                        disabled={row.status === 'saved'}
+                                                        className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white font-mono outline-none focus:border-neon-cyan text-xs"
+                                                    />
+                                                </td>
+                                                <td className="p-4 text-right">
+                                                    {row.status === 'saved' ? (
+                                                        <span className="text-green-500 font-bold text-xs uppercase">Saved</span>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => handleSaveOcrRow(row)}
+                                                            className="px-4 py-1.5 bg-green-900/50 hover:bg-green-800 border border-green-700 text-white text-xs font-bold rounded shadow uppercase tracking-wider"
+                                                        >
+                                                            Save
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {ocrResults.length === 0 && !isProcessingOcr && (
+                                            <tr><td colSpan={5} className="p-12 text-center text-gray-500">Waiting for input...</td></tr>
                                         )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
-                    </>
-                )}
-
-                {/* DELETE CONFIRMATION MODAL */}
-                {isDeleteModalOpen && (
-                    <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
-                        <div className="bg-slate-900 border-2 border-red-600 rounded-xl p-6 w-full max-w-sm shadow-[0_0_50px_rgba(220,38,38,0.3)] animate-fade-in text-center">
-                            <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                            </div>
-                            <h3 className="text-xl font-bold text-red-500 uppercase tracking-widest mb-1">Security Clearance</h3>
-                            <p className="text-gray-400 text-sm mb-6">Enter PIN to authorize deletion.</p>
-                            
-                            <input 
-                                type="password" 
-                                autoFocus
-                                value={deletePin}
-                                onChange={e => setDeletePin(e.target.value)}
-                                className="w-full bg-black border border-red-900 rounded p-3 text-center text-2xl tracking-[0.5em] text-red-500 font-mono focus:border-red-500 outline-none mb-6"
-                                placeholder="******"
-                            />
-                            
-                            <div className="flex gap-3">
-                                <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded transition-colors">CANCEL</button>
-                                <button onClick={handleConfirmDelete} className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-black font-bold rounded transition-colors shadow-lg shadow-red-900/50">CONFIRM</button>
-                            </div>
-                        </div>
                     </div>
                 )}
 
-                {/* AUDIT LOG MODAL */}
-                {isAuditLogOpen && (
-                    <div className="fixed inset-0 bg-black/90 z-[300] flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setIsAuditLogOpen(false)}>
-                        <div className="bg-slate-950 w-full max-w-4xl h-[80vh] rounded-lg border border-green-500/50 shadow-[0_0_50px_rgba(34,197,94,0.2)] flex flex-col font-mono text-xs" onClick={e => e.stopPropagation()}>
-                            <div className="p-3 border-b border-green-900 bg-black flex justify-between items-center">
-                                <h3 className="text-green-500 font-bold uppercase tracking-widest flex items-center gap-2">
-                                    <span className="w-2 h-2 bg-green-500 animate-pulse"></span>
-                                    System Audit Log
+                {/* PAYOUTS TAB (UNCHANGED) */}
+                {activeTab === 'payouts' && (
+                    <div className="space-y-6">
+                        {/* TOP: CALCULATOR & RULES */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {/* Calculator */}
+                            <div className="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                                    <svg className="text-neon-cyan" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="14"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>
+                                    Prize Calculator
                                 </h3>
-                                <button onClick={() => setIsAuditLogOpen(false)} className="text-green-700 hover:text-green-400">[CLOSE]</button>
-                            </div>
-                            <div className="flex-1 overflow-auto p-4 space-y-2 custom-scrollbar">
-                                {auditLog.length === 0 ? (
-                                    <p className="text-green-900 italic">No audit records found.</p>
-                                ) : (
-                                    <table className="w-full text-left border-collapse">
-                                        <thead className="text-green-700 border-b border-green-900 sticky top-0 bg-slate-950">
-                                            <tr>
-                                                <th className="py-2 w-32">TIMESTAMP</th>
-                                                <th className="py-2 w-20">USER</th>
-                                                <th className="py-2 w-20">ACTION</th>
-                                                <th className="py-2">DETAILS</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-green-400 divide-y divide-green-900/30">
-                                            {auditLog.map((log) => (
-                                                <tr key={log.id} className="hover:bg-green-900/10 transition-colors">
-                                                    <td className="py-2 pr-2 opacity-70">{new Date(log.timestamp).toLocaleString()}</td>
-                                                    <td className="py-2 pr-2">{log.user}</td>
-                                                    <td className="py-2 pr-2 font-bold">{log.action}</td>
-                                                    <td className="py-2">{log.details}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* TICKET DETAIL MODAL (FIXED MOBILE SCROLL) */}
-                {selectedTicket && (
-                    <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50" onClick={() => setSelectedTicket(null)}>
-                        {/* CHANGED: overflow-y-auto on wrapper for mobile scroll, lg:overflow-hidden for desktop layout */}
-                        <div className="bg-slate-800 w-full max-w-5xl h-[90vh] lg:h-[85vh] overflow-y-auto lg:overflow-hidden rounded-xl shadow-2xl flex flex-col lg:flex-row border border-slate-600" onClick={e => e.stopPropagation()}>
-                            <div className="lg:w-1/3 bg-black p-4 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-700 flex flex-col items-center">
-                                <h3 className="text-sm font-bold text-gray-400 uppercase mb-3 w-full text-center">Original Ticket Snapshot</h3>
-                                {selectedTicket.ticketImage ? (
-                                    <img src={selectedTicket.ticketImage} alt="Proof" className="w-full object-contain shadow-lg border border-slate-700" />
-                                ) : (
-                                    <div className="flex-grow flex items-center justify-center text-gray-500 italic py-10">No Image Available</div>
-                                )}
-                            </div>
-                            <div className="lg:w-2/3 p-6 flex flex-col min-h-0">
-                                <div className="flex justify-between items-start mb-6 border-b border-slate-700 pb-4">
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-white">Ticket #{selectedTicket.ticketNumber}</h2>
-                                        <p className="text-gray-400 text-sm">{new Date(selectedTicket.transactionDateTime).toLocaleString()}</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-gray-500">GAME</label>
+                                                <select value={calcGame} onChange={e => { setCalcGame(e.target.value); setCalcType(Object.keys(prizeTable[e.target.value] || {})[0]); }} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white">
+                                                    {Object.keys(prizeTable).map(g => <option key={g} value={g}>{g}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-gray-500">TYPE</label>
+                                                <select value={calcType} onChange={e => setCalcType(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white">
+                                                    {Object.keys(prizeTable[calcGame] || {}).map(t => <option key={t} value={t}>{t}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-gray-500">WAGER</label>
+                                                <div className="relative">
+                                                    <span className="absolute left-2 top-2 text-gray-400">$</span>
+                                                    <input type="number" value={calcWager} onChange={e => setCalcWager(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 pl-6 text-white" />
+                                                </div>
+                                            </div>
+                                            <div className="flex items-end">
+                                                <label className="flex items-center gap-2 bg-slate-900 border border-slate-600 rounded p-2 w-full cursor-pointer hover:bg-slate-700">
+                                                    <span className="text-xs font-bold text-gray-300">Is New York?</span>
+                                                    <input type="checkbox" checked={calcIsNY} onChange={e => setCalcIsNY(e.target.checked)} className="accent-neon-cyan w-4 h-4 ml-auto" />
+                                                </label>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <button onClick={() => setSelectedTicket(null)} className="text-gray-400 hover:text-white">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                                    </button>
-                                </div>
-
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                        <p className="text-[10px] text-gray-500 uppercase">Bet Dates</p>
-                                        <p className="text-sm font-bold text-white truncate">{selectedTicket.betDates.join(', ')}</p>
-                                    </div>
-                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                        <p className="text-[10px] text-gray-500 uppercase">Tracks</p>
-                                        <p className="text-sm font-bold text-white truncate" title={selectedTicket.tracks.join(', ')}>{selectedTicket.tracks.join(', ')}</p>
-                                    </div>
-                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                        <p className="text-[10px] text-gray-500 uppercase">Grand Total</p>
-                                        <p className="text-lg font-bold text-green-400">${selectedTicket.grandTotal.toFixed(2)}</p>
-                                    </div>
-                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                        <p className="text-[10px] text-gray-500 uppercase">Total Plays</p>
-                                        <p className="text-lg font-bold text-white">{selectedTicket.plays.length}</p>
+                                    <div className="bg-black/40 rounded-xl border border-neon-cyan/20 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+                                        <div className="absolute inset-0 bg-neon-cyan/5"></div>
+                                        <p className="text-[10px] uppercase text-neon-cyan font-bold tracking-widest relative z-10">ESTIMATED PAYOUT</p>
+                                        <p className="text-4xl font-black text-green-400 font-mono relative z-10 drop-shadow-[0_0_10px_rgba(74,222,128,0.3)]">
+                                            ${getCalculatedPayout().toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                        </p>
                                     </div>
                                 </div>
+                            </div>
 
-                                {/* CHANGED: Specific height on mobile to ensure scrolling within flex column */}
-                                <div className="flex-grow overflow-y-auto bg-slate-900 rounded-lg border border-slate-700 min-h-[300px]">
-                                    <table className="w-full text-xs text-left text-gray-300">
-                                        <thead className="bg-slate-800 text-gray-500 uppercase font-bold sticky top-0">
-                                            <tr>
-                                                <th className="p-3">#</th>
-                                                <th className="p-3">Bet</th>
-                                                <th className="p-3">Mode</th>
-                                                <th className="p-3 text-right">Str</th>
-                                                <th className="p-3 text-right">Box</th>
-                                                <th className="p-3 text-right">Com</th>
-                                                <th className="p-3 text-right">Total</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-800">
-                                            {selectedTicket.plays.map((play, i) => (
-                                                <tr key={i} className="hover:bg-slate-800/50">
-                                                    <td className="p-3">{i + 1}</td>
-                                                    <td className="p-3 font-bold font-mono text-white text-sm">{play.betNumber}</td>
-                                                    <td className="p-3">{play.gameMode}</td>
-                                                    <td className="p-3 text-right font-mono">{play.straightAmount ? play.straightAmount.toFixed(2) : '-'}</td>
-                                                    <td className="p-3 text-right font-mono">{play.boxAmount ? play.boxAmount.toFixed(2) : '-'}</td>
-                                                    <td className="p-3 text-right font-mono">{play.comboAmount ? play.comboAmount.toFixed(2) : '-'}</td>
-                                                    <td className="p-3 text-right font-bold text-green-400">
-                                                        ${calculateWinnings(play, {id:'mock', date:'', lotteryId:'', lotteryName:'', first:'', second:'', third:'', pick3:'', pick4:'', createdAt:''}, prizeTable).length > 0 ? 'WIN' : (play.totalAmount ? play.totalAmount.toFixed(2) : '-')}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                            {/* Rules Reference */}
+                            <div className="lg:col-span-1 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg flex flex-col max-h-[300px]">
+                                <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">Game Rules Reference</h3>
+                                <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                                    {GAME_RULES_TEXT.map((rule, idx) => (
+                                        <div key={idx} className="border border-slate-700 rounded bg-slate-900/50">
+                                            <button onClick={() => setActiveRule(activeRule === idx ? null : idx)} className="w-full flex justify-between p-2 text-xs font-bold text-gray-300 hover:text-white">
+                                                {rule.title} <span>{activeRule === idx ? '-' : '+'}</span>
+                                            </button>
+                                            {activeRule === idx && <div className="p-2 text-[10px] text-gray-400 border-t border-slate-700 whitespace-pre-line">{rule.content}</div>}
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
 
-                {/* ADD RESULT MODAL (WITH AUTO-FILL) */}
-                {isAddResultOpen && (
-                    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-                        <div className="bg-slate-800 w-full max-w-md p-6 rounded-xl border border-slate-600 shadow-2xl">
-                            <h3 className="text-lg font-bold text-white mb-4">Add Manual Result</h3>
-                            <form onSubmit={handleSaveResult} className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs text-gray-400 mb-1">Date</label>
-                                        <input type="date" required value={viewResultsDate} onChange={e=>setViewResultsDate(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white" />
+                        {/* MIDDLE: PAYOUT CONFIGURATION GRID (FULL) */}
+                        <div>
+                            <h3 className="text-lg font-bold text-neon-cyan mb-4">Payout Configuration</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                {Object.keys(prizeTable).map(game => (
+                                    <div key={game} className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-md hover:border-slate-600 transition-colors">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-700 pb-2">
+                                            <h4 className="font-bold text-white text-base">{game}</h4>
+                                            <span className="text-[10px] text-slate-500 uppercase">Per $1</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {Object.keys(prizeTable[game]).map(type => (
+                                                <div key={type}>
+                                                    <label className="block text-[9px] uppercase text-gray-500 font-bold mb-1">{type.replace(/_/g, ' ')}</label>
+                                                    <div className="relative">
+                                                        <span className="absolute left-2 top-1.5 text-gray-500 text-xs">$</span>
+                                                        <input 
+                                                            type="number" 
+                                                            value={prizeTable[game][type]} 
+                                                            onChange={(e) => handlePrizeTableChange(game, type, e.target.value)}
+                                                            className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 pl-5 text-sm text-white focus:border-neon-cyan outline-none font-mono"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-400 mb-1">Lottery</label>
-                                        <select required value={newResultTrack} onChange={e=>setNewResultTrack(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white">
-                                            <option value="">Select...</option>
-                                            {allTracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                        </select>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* BOTTOM: SCENARIO SIMULATOR (SANDBOX) */}
+                        <div className="bg-slate-800 rounded-xl border border-neon-cyan/30 p-1 shadow-lg shadow-neon-cyan/5">
+                            <div className="bg-slate-900/80 rounded-lg p-5">
+                                <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                                    <svg className="text-purple-400" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+                                    Payout Scenario Simulator
+                                </h3>
+                                <div className="flex flex-col lg:flex-row gap-6">
+                                    {/* INPUTS */}
+                                    <div className="flex-1 space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Play Definition */}
+                                            <div className="bg-black/30 p-3 rounded border border-slate-700">
+                                                <p className="text-[10px] text-neon-cyan uppercase font-bold mb-2">Test Play</p>
+                                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                                    <input type="text" placeholder="Bet Number (e.g. 123)" value={simBet} onChange={e => setSimBet(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm" />
+                                                    <select value={simMode} onChange={e => setSimMode(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-sm">
+                                                        {Object.keys(prizeTable).map(g => <option key={g} value={g}>{g}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <input type="number" placeholder="Str $" value={simStr} onChange={e => setSimStr(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                    <input type="number" placeholder="Box $" value={simBox} onChange={e => setSimBox(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                    <input type="number" placeholder="Com $" value={simCom} onChange={e => setSimCom(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                </div>
+                                            </div>
+
+                                            {/* Result Definition */}
+                                            <div className="bg-black/30 p-3 rounded border border-slate-700">
+                                                <p className="text-[10px] text-orange-400 uppercase font-bold mb-2">Hypothetical Result</p>
+                                                <div className="grid grid-cols-3 gap-2 mb-2">
+                                                    <input type="text" placeholder="1st" value={simRes1} onChange={e => setSimRes1(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                    <input type="text" placeholder="2nd" value={simRes2} onChange={e => setSimRes2(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                    <input type="text" placeholder="3rd" value={simRes3} onChange={e => setSimRes3(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input type="text" placeholder="Pick 3" value={simResP3} onChange={e => setSimResP3(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                    <input type="text" placeholder="Pick 4" value={simResP4} onChange={e => setSimResP4(e.target.value)} className="bg-slate-800 border border-slate-600 rounded p-2 text-white text-xs text-center" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleRunSimulator} className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-lg shadow-lg transform hover:scale-[1.01] transition-all">
+                                            RUN SCENARIO
+                                        </button>
+                                    </div>
+
+                                    {/* OUTPUT */}
+                                    <div className="flex-1 bg-black/50 rounded border border-slate-700 p-4 flex flex-col justify-center min-h-[150px]">
+                                        {!simOutput ? (
+                                            <p className="text-center text-gray-500 text-sm">Enter data and run to see results.</p>
+                                        ) : simOutput.length === 0 ? (
+                                            <div className="text-center">
+                                                <p className="text-red-500 font-bold text-lg">NO WIN</p>
+                                                <p className="text-xs text-gray-500">The played numbers did not match the result based on {simMode} rules.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3 w-full">
+                                                <div className="text-center border-b border-gray-700 pb-2">
+                                                    <p className="text-green-400 font-black text-3xl drop-shadow-[0_0_10px_rgba(74,222,128,0.5)]">WINNER!</p>
+                                                    <p className="text-sm text-white font-bold">Total: ${simOutput.reduce((a,b)=>a+b.prizeAmount,0).toFixed(2)}</p>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    {simOutput.map((win, idx) => (
+                                                        <div key={idx} className="flex justify-between text-xs bg-slate-800/50 p-2 rounded">
+                                                            <span className="text-cyan-400 font-bold">{win.matchType}</span>
+                                                            <span className="text-white">${win.prizeAmount.toFixed(2)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <div>
-                                        <label className="block text-xs text-blue-400 font-bold mb-1">1st</label>
-                                        <input type="text" maxLength={2} required value={newResult1st} onChange={e=>setNewResult1st(e.target.value)} className="w-full bg-slate-900 border border-blue-500/50 rounded p-2 text-center text-xl font-bold text-white" placeholder="00" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-400 mb-1">2nd</label>
-                                        <input type="text" maxLength={2} value={newResult2nd} onChange={e=>setNewResult2nd(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-lg text-white" placeholder="00" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-400 mb-1">3rd</label>
-                                        <input type="text" maxLength={2} value={newResult3rd} onChange={e=>setNewResult3rd(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-lg text-white" placeholder="00" />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs text-purple-400 mb-1">Pick 3</label>
-                                        <input type="text" maxLength={3} value={newResultP3} onChange={e=>handleP3Change(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-white font-mono" placeholder="000" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-orange-400 mb-1">Pick 4</label>
-                                        <input type="text" maxLength={4} value={newResultP4} onChange={e=>handleP4Change(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-center text-white font-mono" placeholder="0000" />
-                                    </div>
-                                </div>
-                                <div className="flex justify-end gap-3 mt-4">
-                                    <button type="button" onClick={() => setIsAddResultOpen(false)} className="px-4 py-2 bg-slate-700 rounded text-gray-300">Cancel</button>
-                                    <button type="submit" className="px-4 py-2 bg-neon-cyan text-black font-bold rounded hover:brightness-110">Save Result</button>
-                                </div>
-                            </form>
+                            </div>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* SCANNER OVERLAY */}
-            {isScanning && (
-                <div className="fixed inset-0 z-[100] bg-black flex flex-col">
-                    <div className="p-4 flex justify-between items-center bg-black/80 absolute top-0 w-full z-10 backdrop-blur-sm">
-                        <h2 className="text-white font-bold text-lg flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
-                            Scan Ticket QR
-                        </h2>
-                        <button onClick={stopScan} className="text-white bg-slate-800/80 rounded-full p-2 hover:bg-slate-700">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                        </button>
-                    </div>
-                    
-                    <div className="flex-grow relative bg-black">
-                        <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover"></video>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-64 h-64 border-2 border-neon-cyan rounded-xl relative">
-                                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-neon-cyan -mt-1 -ml-1"></div>
-                                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-neon-cyan -mt-1 -mr-1"></div>
-                                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-neon-cyan -mb-1 -ml-1"></div>
-                                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-neon-cyan -mb-1 -mr-1"></div>
-                            </div>
+            {/* MODALS (Delete, Add Result) */}
+            {isDeleteModalOpen && (
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50">
+                    <div className="bg-slate-800 p-6 rounded-xl border border-red-500/50 shadow-2xl max-w-sm w-full text-center">
+                        <h3 className="text-xl font-bold text-white mb-2">Confirm Deletion</h3>
+                        <p className="text-sm text-gray-400 mb-4">This action cannot be undone.</p>
+                        <input type="password" placeholder="Enter PIN" value={deletePin} onChange={e => setDeletePin(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-3 text-center text-white mb-4 focus:border-red-500 outline-none" autoFocus />
+                        <div className="flex gap-2">
+                            <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-2 bg-slate-700 text-white rounded">Cancel</button>
+                            <button onClick={handleConfirmDelete} className="flex-1 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded">DELETE</button>
                         </div>
-                        <canvas ref={canvasRef} className="hidden"></canvas>
-                    </div>
-
-                    <div className="p-6 bg-black/80 backdrop-blur-sm flex flex-col gap-4 items-center">
-                        <p className="text-gray-300 text-sm">Point camera at QR code or upload image</p>
-                        <input type="file" ref={qrFileInputRef} accept="image/*" className="hidden" onChange={handleQrFileUpload}/>
-                        <button onClick={() => qrFileInputRef.current?.click()} className="w-full max-w-xs bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-lg border border-slate-600 flex items-center justify-center gap-2 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                            Upload Image from Gallery
-                        </button>
                     </div>
                 </div>
             )}
 
-            {/* SUCCESS OVERLAY */}
+            {isAuditLogOpen && (
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50" onClick={() => setIsAuditLogOpen(false)}>
+                    <div className="bg-slate-800 w-full max-w-3xl h-[80vh] rounded-xl border border-slate-600 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-slate-700 flex justify-between items-center">
+                            <h3 className="font-bold text-white">System Audit Log</h3>
+                            <button onClick={() => setIsAuditLogOpen(false)} className="text-gray-400 hover:text-white">Close</button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                            {auditLog.length === 0 ? <p className="text-center text-gray-500">No logs found.</p> : auditLog.map((log) => (
+                                <div key={log.id} className="text-xs p-2 border-b border-slate-700/50 flex gap-4">
+                                    <span className="text-slate-500 font-mono whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</span>
+                                    <span className={`font-bold ${log.action === 'DELETE' ? 'text-red-400' : log.action === 'UPDATE' ? 'text-yellow-400' : 'text-green-400'}`}>{log.action}</span>
+                                    <span className="text-gray-300">{log.details}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ADD MANUAL RESULT MODAL (RESTORING ORIGINAL) */}
+            {isAddResultOpen && (
+                <div className="fixed inset-0 bg-black/90 z-[250] flex items-center justify-center p-4">
+                    <div className="bg-slate-800 w-full max-w-md p-6 rounded-xl border border-slate-600 shadow-2xl">
+                        <h3 className="text-xl font-bold text-white mb-6">Add Result to Local DB</h3>
+                        <form onSubmit={handleSaveResult} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[10px] uppercase text-gray-400 font-bold mb-1">Date</label>
+                                    <input type="date" required value={viewResultsDate} onChange={e=>setViewResultsDate(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white outline-none focus:border-neon-cyan" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] uppercase text-gray-400 font-bold mb-1">Lottery</label>
+                                    <select required value={newResultTrack} onChange={e=>setNewResultTrack(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white outline-none focus:border-neon-cyan">
+                                        <option value="">Select...</option>
+                                        {allTracks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 space-y-4">
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <label className="block text-center text-xs font-bold text-blue-400 mb-1">1st</label>
+                                        <input type="text" maxLength={2} required value={newResult1st} onChange={e=>setNewResult1st(e.target.value)} className="w-full bg-black border border-slate-600 rounded p-2 text-center text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="00" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-center text-xs font-bold text-gray-400 mb-1">2nd</label>
+                                        <input type="text" maxLength={2} value={newResult2nd} onChange={e=>setNewResult2nd(e.target.value)} className="w-full bg-black border border-slate-600 rounded p-2 text-center text-lg text-gray-300 focus:border-gray-500 outline-none" placeholder="00" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-center text-xs font-bold text-gray-400 mb-1">3rd</label>
+                                        <input type="text" maxLength={2} value={newResult3rd} onChange={e=>setNewResult3rd(e.target.value)} className="w-full bg-black border border-slate-600 rounded p-2 text-center text-lg text-gray-300 focus:border-gray-500 outline-none" placeholder="00" />
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-700">
+                                    <div>
+                                        <label className="block text-xs text-purple-400 mb-1">Pick 3</label>
+                                        <input type="text" maxLength={3} value={newResultP3} onChange={e=>setNewResultP3(e.target.value)} className="w-full bg-black border border-slate-600 rounded p-2 text-center text-white font-mono focus:border-purple-500 outline-none" placeholder="000" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-orange-400 mb-1">Pick 4</label>
+                                        <input type="text" maxLength={4} value={newResultP4} onChange={e=>setNewResultP4(e.target.value)} className="w-full bg-black border border-slate-600 rounded p-2 text-center text-white font-mono focus:border-orange-500 outline-none" placeholder="0000" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-2">
+                                <button type="button" onClick={() => setIsAddResultOpen(false)} className="px-4 py-2 rounded bg-slate-700 text-white hover:bg-slate-600 transition-colors">Cancel</button>
+                                <button type="submit" className="px-6 py-2 rounded bg-neon-cyan text-black font-bold hover:brightness-110 transition-all shadow-[0_0_10px_rgba(0,255,255,0.3)]">Save</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {showSuccessOverlay && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center pointer-events-none">
                     <div className="bg-black/80 backdrop-blur-xl border border-neon-green p-8 rounded-2xl shadow-[0_0_50px_rgba(34,197,94,0.4)] flex flex-col items-center animate-in zoom-in duration-300">
