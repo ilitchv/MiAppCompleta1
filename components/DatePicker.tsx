@@ -18,6 +18,20 @@ const DatePicker: React.FC<DatePickerProps> = ({ selectedDates, onDatesChange })
         return d;
     }, []);
 
+    // Calculate the Sunday of the current week (Accounting Week Close)
+    const endOfCurrentWeek = useMemo(() => {
+        const d = new Date(today);
+        const currentDayOfWeek = d.getDay(); // 0 (Sun) to 6 (Sat)
+        
+        // If today is Sunday (0), today is the limit.
+        // If today is Mon (1) -> Sat (6), calculate days remaining until Sunday (7 - day).
+        const daysUntilSunday = currentDayOfWeek === 0 ? 0 : 7 - currentDayOfWeek;
+        
+        d.setDate(d.getDate() + daysUntilSunday);
+        d.setHours(23, 59, 59, 999);
+        return d;
+    }, [today]);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
@@ -33,7 +47,8 @@ const DatePicker: React.FC<DatePickerProps> = ({ selectedDates, onDatesChange })
 
 
     const handleDateClick = (date: Date) => {
-        if (date < today) return; // Don't allow selecting past dates
+        // Strict Validation: Cannot be past today AND cannot be past this Sunday
+        if (date < today || date > endOfCurrentWeek) return; 
 
         const dateString = date.toISOString().split('T')[0];
         
@@ -97,20 +112,25 @@ const DatePicker: React.FC<DatePickerProps> = ({ selectedDates, onDatesChange })
 
                         const dateString = date.toISOString().split('T')[0];
                         const isSelected = selectedDates.includes(dateString);
-                        const isPast = date < today;
                         const isToday = dateString === todayString;
+                        
+                        // LOGIC: Disable Past Dates AND Future Dates beyond this Sunday
+                        const isPast = date < today;
+                        const isAfterWeekClose = date > endOfCurrentWeek;
+                        const isDisabled = isPast || isAfterWeekClose;
 
                         const baseClasses = "w-10 h-10 flex items-center justify-center rounded-full transition-colors duration-200";
                         let dynamicClasses = "";
                         
-                        if (isPast) {
-                            dynamicClasses = "text-gray-400 dark:text-gray-600 cursor-not-allowed line-through";
+                        if (isDisabled) {
+                            dynamicClasses = "text-gray-300 dark:text-gray-700 cursor-not-allowed opacity-50";
+                            if (isAfterWeekClose) dynamicClasses += " bg-gray-100 dark:bg-gray-800/30"; // Visual cue for "Closed" future days
                         } else {
-                            dynamicClasses = "cursor-pointer hover:bg-light-surface dark:hover:bg-dark-surface";
+                            dynamicClasses = "cursor-pointer hover:bg-light-surface dark:hover:bg-dark-surface font-semibold";
                             if (isSelected) {
                                 dynamicClasses += " bg-neon-cyan text-black font-bold ring-2 ring-offset-2 ring-neon-cyan ring-offset-light-card dark:ring-offset-dark-card";
                             } else if (isToday) {
-                                dynamicClasses += " border-2 border-neon-pink";
+                                dynamicClasses += " border-2 border-neon-pink text-neon-pink";
                             }
                         }
 
@@ -118,10 +138,11 @@ const DatePicker: React.FC<DatePickerProps> = ({ selectedDates, onDatesChange })
                             <div key={dateString} className="flex justify-center items-center">
                                 <button
                                     onClick={() => handleDateClick(date)}
-                                    disabled={isPast}
+                                    disabled={isDisabled}
                                     className={`${baseClasses} ${dynamicClasses}`}
                                     aria-label={`Select date ${dateString}`}
                                     aria-pressed={isSelected}
+                                    title={isAfterWeekClose ? "Cannot bet beyond current week (Sunday)" : ""}
                                 >
                                     {date.getDate()}
                                 </button>
@@ -142,7 +163,10 @@ const DatePicker: React.FC<DatePickerProps> = ({ selectedDates, onDatesChange })
     return (
         <div ref={datePickerRef} className={`relative bg-light-card dark:bg-dark-card p-4 rounded-xl shadow-lg animate-fade-in ${isOpen ? 'z-30' : 'z-0'}`}>
              <div className="relative">
-                <h2 className="font-bold text-lg mb-3">Bet Dates</h2>
+                <div className="flex justify-between items-center mb-3">
+                    <h2 className="font-bold text-lg">Bet Dates</h2>
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wider bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">Week Closing: Sun</span>
+                </div>
                 <button
                     id="main-date-picker-btn" /* Added ID for Focus Loop */
                     onClick={() => setIsOpen(prev => !prev)}

@@ -1,4 +1,3 @@
-
 import { WinningResult } from '../types';
 
 export const determineGameMode = (betNumber: string, selectedTracks: string[], pulitoPositions: number[]): string => {
@@ -21,8 +20,15 @@ export const determineGameMode = (betNumber: string, selectedTracks: string[], p
     // Remove any separator before counting length for other game modes
     const length = cleanBetNumber.replace(/[-xX]/g, '').length;
 
-    if (length === 1 && isUSA) {
-        return "Single Action";
+    if (length === 1) {
+        // Single Action with Position Selection (via Pulito Track)
+        if (selectedTracks.includes('Pulito') && pulitoPositions.length > 0) {
+            return `Single Action-${pulitoPositions.sort((a, b) => a - b).join(',')}`;
+        }
+        // Generic Single Action (Legacy/Default)
+        if (isUSA) {
+            return "Single Action";
+        }
     }
 
     if (length === 2) {
@@ -38,6 +44,16 @@ export const determineGameMode = (betNumber: string, selectedTracks: string[], p
     if (length === 4) return "Win 4";
 
     return "-";
+};
+
+// Check if a number is a pure repetition (e.g. 22, 777, 5555)
+// These numbers effectively have NO Box/Combo permutations.
+export const isRepetitiveNumber = (betNumber: string): boolean => {
+    if (!betNumber) return false;
+    const clean = betNumber.replace(/[^0-9]/g, '');
+    if (clean.length < 2) return false; // Single digits handled by GameMode check
+    const firstChar = clean[0];
+    return clean.split('').every(char => char === firstChar);
 };
 
 const calcCombos = (str: string): number => {
@@ -57,13 +73,28 @@ export const calculateRowTotal = (betNumber: string, gameMode: string, stVal: nu
     const bx = bxVal ?? 0;
     const co = coVal ?? 0;
 
-    if (gameMode.startsWith("Pulito-")) {
+    if (gameMode.startsWith("Pulito-") || gameMode.startsWith("Single Action-")) {
         const positionsPart = gameMode.split('-')[1] || '';
         const positionCount = positionsPart ? positionsPart.split(',').length : 1;
         return (st + bx) * Math.max(1, positionCount);
     }
 
     if (["Pale-RD", "Palé", "RD-Quiniela", "Pick 2", "Venezuela", "Single Action"].includes(gameMode)) {
+        // Simple logic for these modes usually, but now Combo is allowed for Pick 2 mixed
+        // If it's single action, box/combo should be 0 from UI, but safe to just add them here generally
+        // unless specific multiplier logic is needed.
+        // For Palé/Pick 2 with Combo, the combo amount usually multiplies by permutations.
+        
+        if (co > 0 && (gameMode === 'Pick 2' || gameMode === 'Palé' || gameMode === 'Pale-RD')) {
+             // Basic Combo calc for pairs if needed, usually 2 ways if not double.
+             // If calculateRowTotal is strictly cost, Combo cost = amount * permutations.
+             // For a mixed pair (12), perms is 2. For double (22), perms is 1 (but Doubles shouldn't have Combo per new rule).
+             // Assuming generic 2x cost for Pair Combos if mixed.
+             const isDouble = isRepetitiveNumber(betNumber);
+             const comboMultiplier = isDouble ? 1 : 2; // Though doubles shouldn't have combo.
+             return st + bx + (co * comboMultiplier);
+        }
+        
         return st + bx;
     }
     

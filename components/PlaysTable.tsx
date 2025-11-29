@@ -1,8 +1,7 @@
-
 import React, { useRef, useEffect } from 'react';
 import type { Play } from '../types';
 import { MAX_PLAYS, WAGER_LIMITS, GAME_MODE_LENGTHS, TERMINAL_GAME_MODES } from '../constants';
-import { calculateRowTotal, determineGameMode } from '../utils/helpers';
+import { calculateRowTotal, determineGameMode, isRepetitiveNumber } from '../utils/helpers';
 
 interface PlaysTableProps {
   plays: Play[];
@@ -138,8 +137,29 @@ const PlaysTable: React.FC<PlaysTableProps> = ({
   };
   
   const renderInput = (play: Play, field: 'straightAmount' | 'boxAmount' | 'comboAmount') => {
-    const isComboDisabled = (field === 'comboAmount' && (play.gameMode !== 'Pick 3' && play.gameMode !== 'Win 4')) || play.gameMode === '-';
+    // 1. Check for Single Action (1 digit)
+    const isSingleAction = play.gameMode.startsWith('Single Action');
+    
+    // 2. Check for Repetitive Numbers (Doubles, Triples, Quads like 22, 777, 5555)
+    // Using the helper defined in utils
+    const isRepetitive = isRepetitiveNumber(play.betNumber);
 
+    // 3. Define Disabled Logic
+    let isDisabled = false;
+
+    if (field === 'boxAmount') {
+        // Box disabled for Single Action OR Repetitive Numbers (Box of 22 is just 22)
+        isDisabled = isSingleAction || isRepetitive;
+    } else if (field === 'comboAmount') {
+        // Combo disabled for Single Action OR Repetitive Numbers
+        // Note: This IMPLICITLY enables Combo for all other plays (Pick 2 mixed, Palé, etc.)
+        isDisabled = isSingleAction || isRepetitive;
+    }
+
+    // Always disabled if no game mode detected
+    if (play.gameMode === '-') isDisabled = true;
+
+    // --- Original Logic for Limits ---
     let gameModeForLimits = play.gameMode;
     if (gameModeForLimits.startsWith('Pulito')) {
         gameModeForLimits = 'Pulito';
@@ -157,6 +177,9 @@ const PlaysTable: React.FC<PlaysTableProps> = ({
         ? 'border-red-500' 
         : 'border-transparent focus:border-neon-cyan';
     
+    // Grey out if disabled to give visual feedback
+    const disabledClasses = isDisabled ? "opacity-30 cursor-not-allowed bg-gray-200 dark:bg-gray-800" : "";
+    
     const tooltipText = isOverLimit && limit !== null ? `Max wager is $${limit.toFixed(2)}` : '';
 
     return (
@@ -166,11 +189,11 @@ const PlaysTable: React.FC<PlaysTableProps> = ({
             value={play[field] ?? ''}
             onChange={(e) => handleInputChange(play.id, field, e.target.value === '' ? null : +e.target.value)}
             onKeyDown={(e) => handleNavigation(e, play.id, field)}
-            className={`${baseClasses} ${borderClasses}`}
+            className={`${baseClasses} ${borderClasses} ${disabledClasses}`}
             placeholder="$"
             min="0"
             max={limit ?? undefined}
-            disabled={isComboDisabled}
+            disabled={isDisabled}
             title={tooltipText}
         />
     );

@@ -1,21 +1,20 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './components/Header';
 import TrackSelector from './components/TrackSelector';
 import DatePicker from './components/DatePicker';
-import ActionsPanel from './components/ActionsPanel';
 import PlaysTable from './components/PlaysTable';
 import TotalDisplay from './components/TotalDisplay';
-import TicketModal from './components/TicketModal';
+import ActionsPanel from './components/ActionsPanel';
 import OcrModal from './components/OcrModal';
 import WizardModal from './components/WizardModal';
 import ChatbotModal from './components/ChatbotModal';
+import TicketModal from './components/TicketModal';
 import CalculatorModal from './components/CalculatorModal';
 import ValidationErrorModal from './components/ValidationErrorModal';
-import { MAX_PLAYS, WAGER_LIMITS } from './constants';
-import { Play, ImageInterpretationResult, WizardPlay, ServerHealth, CopiedWagers } from './types';
-import { calculateRowTotal, getTodayDateString, fileToBase64, determineGameMode } from './utils/helpers';
+import { getTodayDateString, calculateRowTotal, fileToBase64, determineGameMode } from './utils/helpers';
 import { interpretTicketImage, interpretNaturalLanguagePlays } from './services/geminiService';
+import type { Play, WizardPlay, ImageInterpretationResult, CopiedWagers, ServerHealth } from './types';
+import { MAX_PLAYS } from './constants';
 import { localDbService } from './services/localDbService';
 import { useSound } from './hooks/useSound';
 
@@ -25,120 +24,80 @@ interface PlaygroundAppProps {
 }
 
 const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
-    // --- STATE ---
+    // State
+    const [plays, setPlays] = useState<Play[]>([]);
     const [selectedTracks, setSelectedTracks] = useState<string[]>([]);
     const [selectedDates, setSelectedDates] = useState<string[]>([getTodayDateString()]);
-    const [plays, setPlays] = useState<Play[]>([]);
-    const [selectedPlayIds, setSelectedPlayIds] = useState<number[]>([]);
     const [pulitoPositions, setPulitoPositions] = useState<number[]>([]);
+    
+    const [selectedPlayIds, setSelectedPlayIds] = useState<number[]>([]);
+    const [lastAddedPlayId, setLastAddedPlayId] = useState<number | null>(null);
+    const [copiedWagers, setCopiedWagers] = useState<CopiedWagers | null>(null);
     
     // Modals
     const [isOcrOpen, setIsOcrOpen] = useState(false);
     const [isWizardOpen, setIsWizardOpen] = useState(false);
     const [isChatbotOpen, setIsChatbotOpen] = useState(false);
     const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
-    const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
     const [isValidationErrorOpen, setIsValidationErrorOpen] = useState(false);
+    const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
     // Ticket State
     const [ticketNumber, setTicketNumber] = useState('');
-    const [ticketImageBlob, setTicketImageBlob] = useState<Blob | null>(null);
     const [isTicketConfirmed, setIsTicketConfirmed] = useState(false);
+    const [ticketImageBlob, setTicketImageBlob] = useState<Blob | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [lastSaveStatus, setLastSaveStatus] = useState<'success' | 'error' | null>(null);
     const [serverHealth, setServerHealth] = useState<ServerHealth>('checking');
 
-    // Utils
-    const [copiedWagers, setCopiedWagers] = useState<CopiedWagers | null>(null);
-    const [lastAddedPlayId, setLastAddedPlayId] = useState<number | null>(null);
-    const addPlayButtonRef = useRef<HTMLButtonElement>(null);
-    const { playSound, isMuted, toggleMute } = useSound();
+    // Theme (Passed to Header)
+    const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+    const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-    // --- EFFECTS ---
+    // Sound Hook
+    const { isMuted, toggleMute } = useSound();
+
+    // Sync theme with document
     useEffect(() => {
-        checkServerHealth();
+        const root = document.documentElement;
+        if (theme === 'dark') {
+            root.classList.add('dark');
+        } else {
+            root.classList.remove('dark');
+        }
+    }, [theme]);
+
+    const addPlayButtonRef = useRef<HTMLButtonElement>(null);
+
+    // Initial Server Health Check
+    useEffect(() => {
+        const checkHealth = async () => {
+            try {
+                const res = await fetch('/api/health');
+                if (res.ok) setServerHealth('online');
+                else setServerHealth('offline');
+            } catch {
+                setServerHealth('offline');
+            }
+        };
+        checkHealth();
     }, []);
 
-    // --- REACTIVE GAME MODE SYNCHRONIZATION (PICK 2 FIX) ---
-    // Automatically updates existing plays when user changes Tracks or Pulito Positions
-    useEffect(() => {
-        setPlays(prevPlays => {
-            let hasChanges = false;
-            const updatedPlays = prevPlays.map(play => {
-                // Skip empty plays or non-changeable ones
-                if (!play.betNumber) return play;
-
-                // Re-calculate mode based on NEW track selection
-                const newMode = determineGameMode(play.betNumber, selectedTracks, pulitoPositions);
-
-                // If the mode is different (e.g. was 'Pick 2', now becomes 'Venezuela'), update it
-                if (newMode !== play.gameMode) {
-                    hasChanges = true;
-                    return { ...play, gameMode: newMode };
-                }
-                return play;
-            });
-
-            // Only trigger a re-render if data actually changed
-            return hasChanges ? updatedPlays : prevPlays;
-        });
-    }, [selectedTracks, pulitoPositions]);
-
-    // --- HELPERS ---
-    const checkServerHealth = async () => {
-        try {
-            const res = await fetch('/api/health');
-            if (res.ok) setServerHealth('online');
-            else setServerHealth('offline');
-        } catch {
-            setServerHealth('offline');
-        }
-    };
-
-    const getNextId = () => {
-        return plays.length > 0 ? Math.max(...plays.map(p => p.id)) + 1 : 1;
-    };
-
-    // --- HANDLERS ---
-
-    const handleAddPlay = () => {
-        if (plays.length >= MAX_PLAYS) {
-            alert(`Maximum of ${MAX_PLAYS} plays reached.`);
-            return;
-        }
-        const newId = getNextId();
+    const handleAddPlay = useCallback(() => {
+        if (plays.length >= MAX_PLAYS) return;
+        const newId = Date.now();
         const newPlay: Play = {
             id: newId,
             betNumber: '',
-            gameMode: '-',
+            gameMode: 'Pick 3',
             straightAmount: null,
             boxAmount: null,
             comboAmount: null
         };
         setPlays(prev => [...prev, newPlay]);
         setLastAddedPlayId(newId);
-    };
-
-    const handleUpdatePlay = (id: number, updatedFields: Partial<Play>) => {
-        setPlays(prev => prev.map(play => {
-            if (play.id !== id) return play;
-            
-            const updatedPlay = { ...play, ...updatedFields };
-            
-            // Auto-detect game mode if betNumber changed
-            if (updatedFields.betNumber !== undefined) {
-                updatedPlay.gameMode = determineGameMode(updatedPlay.betNumber, selectedTracks, pulitoPositions);
-            }
-
-            return updatedPlay;
-        }));
-    };
-
-    const handleDeletePlay = (id: number) => {
-        setPlays(prev => prev.filter(p => p.id !== id));
-        setSelectedPlayIds(prev => prev.filter(pid => pid !== id));
-    };
+    }, [plays.length]);
 
     const handleDeleteSelected = () => {
         if (selectedPlayIds.length === 0) return;
@@ -147,201 +106,210 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
     };
 
     const handleReset = () => {
-        if (confirm('Are you sure you want to clear all plays and selections?')) {
-            setPlays([]);
-            setSelectedTracks([]);
-            setPulitoPositions([]);
-            setSelectedDates([getTodayDateString()]);
-            setSelectedPlayIds([]);
-            setTicketNumber('');
-            setIsTicketConfirmed(false);
-            setTicketImageBlob(null);
-        }
+        setPlays([]);
+        setSelectedTracks([]);
+        setPulitoPositions([]);
+        setSelectedDates([getTodayDateString()]);
+        setSelectedPlayIds([]);
+        setTicketNumber('');
+        setIsTicketConfirmed(false);
+        setTicketImageBlob(null);
+        setCopiedWagers(null);
+        setLastAddedPlayId(null);
+        setLastSaveStatus(null);
+        setValidationErrors([]);
+        setIsValidationErrorOpen(false);
     };
 
-    // --- INTEGRATIONS ---
-
-    const handleOcrSuccess = (result: ImageInterpretationResult) => {
-        // Merge Logic
-        if (result.detectedDate) {
-            setSelectedDates([result.detectedDate]);
-        }
-        if (result.detectedTracks.length > 0) {
-            // Logic to map OCR track names to IDs would go here.
-        }
-
-        const newPlays: Play[] = result.plays.map((p, index) => {
-            const betNumber = p.betNumber.replace(/[^0-9-xX]/g, '');
-            return {
-                id: getNextId() + index,
-                betNumber: betNumber,
-                gameMode: determineGameMode(betNumber, selectedTracks, pulitoPositions),
-                straightAmount: p.straightAmount,
-                boxAmount: p.boxAmount,
-                comboAmount: p.comboAmount
-            };
-        });
-
-        setPlays(prev => [...prev, ...newPlays]);
-        playSound('success');
-    };
-
-    const handleWizardAddPlays = (wizardPlays: WizardPlay[]) => {
-        const newPlays: Play[] = wizardPlays.map((wp, index) => ({
-            id: getNextId() + index,
-            betNumber: wp.betNumber,
-            gameMode: wp.gameMode,
-            straightAmount: wp.straight,
-            boxAmount: wp.box,
-            comboAmount: wp.combo
+    const updatePlay = (id: number, updatedPlay: Partial<Play>) => {
+        setPlays(prev => prev.map(p => {
+            if (p.id !== id) return p;
+            
+            const merged = { ...p, ...updatedPlay };
+            
+            // Auto-detect game mode if betNumber changed
+            if (updatedPlay.betNumber !== undefined) {
+                const mode = determineGameMode(updatedPlay.betNumber, selectedTracks, pulitoPositions);
+                if (mode !== '-') merged.gameMode = mode;
+            }
+            return merged;
         }));
-        setPlays(prev => [...prev, ...newPlays]);
-        setIsWizardOpen(false);
-        playSound('add');
     };
 
-    // --- COPY / PASTE ---
+    const deletePlay = (id: number) => {
+        setPlays(prev => prev.filter(p => p.id !== id));
+        setSelectedPlayIds(prev => prev.filter(pid => pid !== id));
+    };
+
     const handleCopyWagers = (play: Play) => {
         setCopiedWagers({
             straightAmount: play.straightAmount,
             boxAmount: play.boxAmount,
             comboAmount: play.comboAmount
         });
-        playSound('click');
     };
 
     const handlePasteWagers = () => {
         if (!copiedWagers || selectedPlayIds.length === 0) return;
-        
         setPlays(prev => prev.map(p => {
             if (selectedPlayIds.includes(p.id)) {
-                return {
-                    ...p,
-                    ...copiedWagers
-                };
+                return { ...p, ...copiedWagers };
             }
             return p;
         }));
-        playSound('pop');
     };
 
-    // --- TICKET GENERATION & VALIDATION ---
+    // --- IMPORT HANDLERS ---
+    const handleAddOcrResults = (result: ImageInterpretationResult) => {
+        const newPlays = result.plays.map(p => ({
+            id: Date.now() + Math.random(),
+            betNumber: p.betNumber,
+            gameMode: determineGameMode(p.betNumber, selectedTracks, pulitoPositions) !== '-' ? determineGameMode(p.betNumber, selectedTracks, pulitoPositions) : 'Pick 3',
+            straightAmount: p.straightAmount,
+            boxAmount: p.boxAmount,
+            comboAmount: p.comboAmount
+        }));
+        
+        if (result.detectedDate) {
+            if (!selectedDates.includes(result.detectedDate)) {
+                setSelectedDates(prev => [...prev, result.detectedDate!].sort());
+            }
+        }
+        
+        setPlays(prev => [...prev, ...newPlays]);
+    };
 
+    const handleAddWizardPlays = (wizardPlays: WizardPlay[]) => {
+        const newPlays = wizardPlays.map(p => ({
+            id: Date.now() + Math.random(),
+            betNumber: p.betNumber,
+            gameMode: p.gameMode,
+            straightAmount: p.straight,
+            boxAmount: p.box,
+            comboAmount: p.combo
+        }));
+        setPlays(prev => [...prev, ...newPlays]);
+        setIsWizardOpen(false);
+    };
+
+    // --- TICKET GENERATION ---
     const handleGenerateTicket = () => {
         const errors: string[] = [];
-
-        if (selectedTracks.length === 0) errors.push("Please select at least one track/lottery.");
-        if (selectedDates.length === 0) errors.push("Please select at least one date.");
-        if (plays.length === 0) errors.push("Please add at least one play.");
-
-        // Validation logic
-        plays.forEach((play, index) => {
-            if (!play.betNumber.trim()) errors.push(`Play #${index + 1}: Bet number is empty.`);
-            else if (play.gameMode === '-') errors.push(`Play #${index + 1}: Bet number "${play.betNumber}" is invalid for the selected tracks.`);
-            
-            // CRITICAL VALIDATION: Pick 2 is a transitional state. Block it.
-            if (play.gameMode === 'Pick 2') {
-                errors.push(`Play #${index + 1}: 'Pick 2' is ambiguous. Please select 'Venezuela' or 'Pulito' track to define 2-digit plays.`);
+        if (selectedTracks.length === 0) errors.push("Select at least one track.");
+        if (selectedDates.length === 0) errors.push("Select at least one date.");
+        if (plays.length === 0) errors.push("Add at least one play.");
+        
+        const validPlays = plays.filter(p => 
+            p.betNumber && p.gameMode !== '-' && 
+            calculateRowTotal(p.betNumber, p.gameMode, p.straightAmount, p.boxAmount, p.comboAmount) > 0
+        );
+        
+        // Single Action & Pulito Validation (CRITICAL)
+        plays.forEach((p, idx) => {
+            // 1. Single Action Generic Check
+            // If the game mode is specifically "Single Action" without position suffix, it means no positions were selected/mapped.
+            if (p.gameMode === 'Single Action') {
+                errors.push(`Play #${idx + 1}: Single Action requires specific positions. Select 'Pulito' and at least one position (1-7).`);
             }
 
-            const total = calculateRowTotal(play.betNumber, play.gameMode, play.straightAmount, play.boxAmount, play.comboAmount);
-            if (total <= 0) errors.push(`Play #${index + 1}: Must have an amount greater than $0.`);
-
-            let gameModeForLimits = play.gameMode;
-            if (gameModeForLimits.startsWith('Pulito')) gameModeForLimits = 'Pulito';
-            
-            const limits = WAGER_LIMITS[gameModeForLimits];
-            if (limits) {
-                if (play.straightAmount !== null && limits.straight !== null && play.straightAmount > limits.straight) errors.push(`Play #${index + 1}: Straight wager $${play.straightAmount} exceeds limit ($${limits.straight}).`);
-                if (play.boxAmount !== null && limits.box !== null && play.boxAmount > limits.box) errors.push(`Play #${index + 1}: Box wager $${play.boxAmount} exceeds limit ($${limits.box}).`);
-                if (play.comboAmount !== null && limits.combo !== null && play.comboAmount > limits.combo) errors.push(`Play #${index + 1}: Combo wager $${play.comboAmount} exceeds limit ($${limits.combo}).`);
+            // 2. Pulito 2-digit position check
+            if (p.betNumber.length === 2 && selectedTracks.includes('Pulito') && pulitoPositions.length > 0) {
+                const invalidPositions = pulitoPositions.filter(pos => pos > 4);
+                if (invalidPositions.length > 0) {
+                    errors.push(`Play #${idx + 1}: 2-digit plays (Pulito) are restricted to positions 1-4.`);
+                }
             }
         });
+        
+        if (validPlays.length === 0 && plays.length > 0) errors.push("No valid plays found (check amounts or bet numbers).");
 
         if (errors.length > 0) {
             setValidationErrors(errors);
             setIsValidationErrorOpen(true);
-            playSound('error');
             return;
         }
 
-        // All good
-        setTicketNumber(''); // Will be generated in modal or backend
-        setIsTicketConfirmed(false);
-        setTicketImageBlob(null);
-        setLastSaveStatus(null);
+        if (validPlays.length < plays.length) {
+            if(!confirm(`Found ${plays.length - validPlays.length} invalid plays. Proceed with only valid plays?`)) return;
+        }
+        
         setIsTicketModalOpen(true);
     };
 
-    const handleSaveTicket = async (ticketData: any) => {
+    const handleSaveTicketToDb = async (ticketData: any) => {
         setIsSaving(true);
+        setLastSaveStatus(null);
         
-        // 1. Save locally first (Optimistic UI)
+        // Always save locally first (redundancy)
         localDbService.saveTicket(ticketData);
 
-        // 2. Try to sync with server
         try {
-            const response = await fetch('/api/tickets', {
+            const res = await fetch('/api/tickets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(ticketData),
+                body: JSON.stringify(ticketData)
             });
-
-            if (response.ok) {
+            if (res.ok) {
                 setLastSaveStatus('success');
-                playSound('success');
             } else {
                 setLastSaveStatus('error');
-                // Even if server fails, it's saved locally.
             }
         } catch (error) {
-            console.error("Save error:", error);
+            console.error("Save failed", error);
             setLastSaveStatus('error');
         } finally {
             setIsSaving(false);
         }
     };
 
-    // --- CALCULATIONS ---
-    const baseTotal = plays.reduce((acc, p) => acc + calculateRowTotal(p.betNumber, p.gameMode, p.straightAmount, p.boxAmount, p.comboAmount), 0);
+    // Calculate totals
+    const baseTotal = plays.reduce((sum, p) => sum + calculateRowTotal(p.betNumber, p.gameMode, p.straightAmount, p.boxAmount, p.comboAmount), 0);
     
-    const trackMultiplier = selectedTracks.length > 0 ? selectedTracks.length : 1;
-    const dateMultiplier = selectedDates.length > 0 ? selectedDates.length : 1;
+    // Grand Total Logic Refinement for Single Action
+    let effectiveTrackCount = selectedTracks.length;
     
-    // Refined Grand Total Calculation
-    const grandTotal = plays.reduce((acc, p) => {
-        const rowTotal = calculateRowTotal(p.betNumber, p.gameMode, p.straightAmount, p.boxAmount, p.comboAmount);
-        if (p.gameMode.startsWith('Pulito')) {
-            // Pulito implies the Pulito track is selected. Track multiplier doesn't apply the same way (it's 1 track).
-            return acc + (rowTotal * dateMultiplier);
-        }
-        return acc + (rowTotal * trackMultiplier * dateMultiplier);
-    }, 0);
+    const isSingleActionPresent = plays.some(p => p.gameMode.startsWith('Single Action'));
+    const isPulitoSelected = selectedTracks.includes('Pulito');
+    const otherUsaTracksCount = selectedTracks.filter(t => t !== 'Pulito' && t !== 'Venezuela').length;
 
+    if (isSingleActionPresent && isPulitoSelected && otherUsaTracksCount > 0) {
+        effectiveTrackCount -= 1; // Discount Pulito as it's acting as position modifier
+    }
+
+    const trackMultiplier = Math.max(1, effectiveTrackCount);
+    const grandTotal = baseTotal * trackMultiplier * Math.max(1, selectedDates.length);
 
     return (
-        <div className="flex flex-col h-screen bg-light-bg dark:bg-dark-bg text-gray-900 dark:text-gray-100 transition-colors duration-300">
-            {/* 1. Header (Inside App) */}
-            <div className="flex-shrink-0">
-                <Header theme={document.documentElement.classList.contains('dark') ? 'dark' : 'light'} toggleTheme={() => { /* Handled by MainApp */ }} onClose={onClose} />
-            </div>
-
-            {/* 2. Main Scrollable Area */}
-            <div className="flex-grow overflow-y-auto p-2 sm:p-4 space-y-4">
+        <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-gray-900 dark:text-gray-100 flex flex-col transition-colors duration-300">
+            <Header theme={theme} toggleTheme={toggleTheme} onClose={onClose} />
+            
+            <main className="flex-grow p-2 sm:p-4 overflow-y-auto space-y-4 max-w-7xl mx-auto w-full">
                 
-                <TrackSelector 
-                    selectedTracks={selectedTracks} 
-                    onSelectionChange={setSelectedTracks}
-                    selectedDates={selectedDates}
-                    pulitoPositions={pulitoPositions}
-                    onPulitoPositionsChange={setPulitoPositions}
-                />
+                {/* DatePicker moved to top as requested */}
+                <DatePicker selectedDates={selectedDates} onDatesChange={setSelectedDates} />
 
-                <DatePicker 
-                    selectedDates={selectedDates}
-                    onDatesChange={setSelectedDates}
-                />
+                {/* Top Section: Tracks & Total */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    <div className="lg:col-span-8">
+                        <TrackSelector 
+                            selectedTracks={selectedTracks} 
+                            onSelectionChange={setSelectedTracks} 
+                            selectedDates={selectedDates}
+                            pulitoPositions={pulitoPositions}
+                            onPulitoPositionsChange={setPulitoPositions}
+                        />
+                    </div>
+                    <div className="lg:col-span-4 space-y-4">
+                        <TotalDisplay 
+                            baseTotal={baseTotal} 
+                            trackMultiplier={trackMultiplier} 
+                            dateMultiplier={selectedDates.length} 
+                            grandTotal={grandTotal} 
+                        />
+                    </div>
+                </div>
 
+                {/* Actions */}
                 <ActionsPanel 
                     onAddPlay={handleAddPlay}
                     onDeleteSelected={handleDeleteSelected}
@@ -357,47 +325,42 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
                     addPlayButtonRef={addPlayButtonRef}
                 />
 
-                {/* UTILITY BAR (RESTORED) */}
-                <div className="flex justify-between items-center px-1 animate-fade-in">
+                {/* UTILITIES ROW (Restored) */}
+                <div className="flex justify-between items-center px-1 py-1 bg-light-surface/50 dark:bg-dark-surface/50 rounded-lg border border-gray-200 dark:border-gray-800">
                     <div className="flex gap-2">
-                        <button 
+                        <button
                             onClick={toggleMute}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors text-xs font-bold ${isMuted ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-gray-200 dark:bg-gray-800 border-gray-300 dark:border-gray-700 hover:bg-gray-300 dark:hover:bg-gray-700'}`}
+                            className={`p-2 rounded-full transition-colors ${isMuted ? 'bg-red-500/20 text-red-500' : 'bg-neon-cyan/20 text-neon-cyan'}`}
+                            title={isMuted ? "Unmute" : "Mute"}
                         >
                             {isMuted ? (
-                                <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/></svg>
-                                    Muted
-                                </>
+                                <svg data-lucide="volume-x" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" x2="17" y1="9" y2="15"/><line x1="17" x2="23" y1="9" y2="15"/></svg>
                             ) : (
-                                <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-                                    Sound On
-                                </>
+                                <svg data-lucide="volume-2" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
                             )}
                         </button>
-                        
-                        <button 
+                        <button
                             onClick={() => setIsCalculatorOpen(true)}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors text-xs font-bold"
+                            className="p-2 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:text-neon-cyan transition-colors"
+                            title="Prize Calculator"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="14"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>
-                            Payouts
+                            <svg data-lucide="calculator" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="14"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>
                         </button>
                     </div>
-
-                    <div className="flex items-center gap-2 bg-black/10 dark:bg-black/30 px-3 py-1.5 rounded-full border border-gray-200 dark:border-white/5">
-                        <div className={`w-2 h-2 rounded-full ${serverHealth === 'online' ? 'bg-green-500 shadow-[0_0_5px_theme(colors.green.500)]' : 'bg-red-500 animate-pulse'}`}></div>
-                        <span className="text-[10px] font-mono font-bold opacity-70 uppercase tracking-wider">
-                            {serverHealth === 'online' ? 'DB Online' : 'DB Offline'}
+                    
+                    <div className="flex items-center gap-2 pr-2">
+                        <div className={`w-2 h-2 rounded-full ${serverHealth === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                        <span className="text-[10px] font-bold uppercase text-gray-500 dark:text-gray-400">
+                            {serverHealth === 'online' ? 'System Online' : 'System Offline'}
                         </span>
                     </div>
                 </div>
 
+                {/* Plays Table */}
                 <PlaysTable 
                     plays={plays}
-                    updatePlay={handleUpdatePlay}
-                    deletePlay={handleDeletePlay}
+                    updatePlay={updatePlay}
+                    deletePlay={deletePlay}
                     selectedPlayIds={selectedPlayIds}
                     setSelectedPlayIds={setSelectedPlayIds}
                     onCopyWagers={handleCopyWagers}
@@ -406,51 +369,39 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
                     selectedTracks={selectedTracks}
                     pulitoPositions={pulitoPositions}
                 />
+            </main>
 
-                <TotalDisplay 
-                    baseTotal={baseTotal}
-                    trackMultiplier={trackMultiplier}
-                    dateMultiplier={dateMultiplier}
-                    grandTotal={grandTotal}
-                />
-            </div>
-
-            {/* 3. Modals */}
+            {/* Modals */}
             <OcrModal 
                 isOpen={isOcrOpen} 
-                onClose={() => setIsOcrOpen(false)}
-                onSuccess={handleOcrSuccess}
+                onClose={() => setIsOcrOpen(false)} 
+                onSuccess={handleAddOcrResults}
                 interpretTicketImage={interpretTicketImage}
                 fileToBase64={fileToBase64}
             />
 
-            <WizardModal 
+            <WizardModal
                 isOpen={isWizardOpen}
                 onClose={() => setIsWizardOpen(false)}
-                onAddPlays={handleWizardAddPlays}
+                onAddPlays={handleAddWizardPlays}
                 selectedTracks={selectedTracks}
                 pulitoPositions={pulitoPositions}
             />
 
-            <ChatbotModal 
+            <ChatbotModal
                 isOpen={isChatbotOpen}
                 onClose={() => setIsChatbotOpen(false)}
-                onSuccess={handleOcrSuccess}
+                onSuccess={handleAddOcrResults}
                 interpretTicketImage={interpretTicketImage}
                 interpretNaturalLanguagePlays={interpretNaturalLanguagePlays}
                 fileToBase64={fileToBase64}
                 language={language}
             />
 
-            <CalculatorModal 
-                isOpen={isCalculatorOpen}
-                onClose={() => setIsCalculatorOpen(false)}
-            />
-
-            <TicketModal 
+            <TicketModal
                 isOpen={isTicketModalOpen}
                 onClose={() => setIsTicketModalOpen(false)}
-                plays={plays}
+                plays={plays.filter(p => calculateRowTotal(p.betNumber, p.gameMode, p.straightAmount, p.boxAmount, p.comboAmount) > 0)}
                 selectedTracks={selectedTracks}
                 selectedDates={selectedDates}
                 grandTotal={grandTotal}
@@ -461,17 +412,22 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
                 ticketImageBlob={ticketImageBlob}
                 setTicketImageBlob={setTicketImageBlob}
                 terminalId="TERM-001"
-                cashierId="USER-A"
-                onSaveTicket={handleSaveTicket}
+                cashierId="ADMIN"
+                onSaveTicket={handleSaveTicketToDb}
                 isSaving={isSaving}
                 serverHealth={serverHealth}
                 lastSaveStatus={lastSaveStatus}
             />
 
-            <ValidationErrorModal 
+            <ValidationErrorModal
                 isOpen={isValidationErrorOpen}
                 onClose={() => setIsValidationErrorOpen(false)}
                 errors={validationErrors}
+            />
+
+            <CalculatorModal 
+                isOpen={isCalculatorOpen}
+                onClose={() => setIsCalculatorOpen(false)}
             />
         </div>
     );

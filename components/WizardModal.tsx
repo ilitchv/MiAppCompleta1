@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import type { WizardPlay } from '../types';
-import { determineGameMode, calculateRowTotal, expandBetSequence } from '../utils/helpers';
+import { determineGameMode, calculateRowTotal, expandBetSequence, isRepetitiveNumber } from '../utils/helpers';
 import { MAX_PLAYS } from '../constants';
 import { interpretBatchHandwriting } from '../services/geminiService';
 
@@ -121,7 +120,16 @@ const WizardModal: React.FC<WizardModalProps> = ({ isOpen, onClose, onAddPlays, 
             setTimeout(() => betInputRef.current?.focus(), 10);
             return;
         }
-        setPlays(prev => [{ betNumber, gameMode, straight, box, combo }, ...prev]);
+
+        // --- FILTER INVALID WAGERS ---
+        // If Single Action or Repetitive Number, clear Box/Combo
+        const isSingleAction = gameMode.startsWith('Single Action');
+        const isRepetitive = isRepetitiveNumber(betNumber);
+        
+        const finalBox = (isSingleAction || isRepetitive) ? null : box;
+        const finalCombo = (isSingleAction || isRepetitive) ? null : combo;
+
+        setPlays(prev => [{ betNumber, gameMode, straight, box: finalBox, combo: finalCombo }, ...prev]);
         setBetNumber('');
         setTimeout(() => betInputRef.current?.focus(), 10);
     };
@@ -159,7 +167,15 @@ const WizardModal: React.FC<WizardModalProps> = ({ isOpen, onClose, onAddPlays, 
             const isUSA = selectedTracks.some(t => ["New York", "Georgia", "New Jersey", "Florida", "Connecticut", "Pensilvania", "Brooklyn", "Front", "Pulito", "Horses"].some(s => t.includes(s)));
             if (isUSA && (qpMode === 'Pale-RD' || detectedMode === 'Pale-RD')) detectedMode = 'Palé';
             
-            if(numStr) newPlays.push({ betNumber: numStr, gameMode: detectedMode !== '-' ? detectedMode : qpMode, straight, box, combo });
+            if(numStr) {
+                // --- FILTER INVALID WAGERS ---
+                const isSingleAction = detectedMode.startsWith('Single Action');
+                const isRepetitive = isRepetitiveNumber(numStr);
+                const finalBox = (isSingleAction || isRepetitive) ? null : box;
+                const finalCombo = (isSingleAction || isRepetitive) ? null : combo;
+
+                newPlays.push({ betNumber: numStr, gameMode: detectedMode !== '-' ? detectedMode : qpMode, straight, box: finalBox, combo: finalCombo });
+            }
         }
         setPlays(prev => [...newPlays.reverse(), ...prev]);
     };
@@ -176,7 +192,14 @@ const WizardModal: React.FC<WizardModalProps> = ({ isOpen, onClose, onAddPlays, 
                 numStr += (startChar === endChar) ? startChar : String(i);
             }
             const mode = determineGameMode(numStr, selectedTracks, pulitoPositions);
-            newPlays.push({ betNumber: numStr, gameMode: mode !== '-' ? mode : 'Pick 3', straight, box, combo });
+            
+            // --- FILTER INVALID WAGERS ---
+            const isSingleAction = mode.startsWith('Single Action');
+            const isRepetitive = isRepetitiveNumber(numStr);
+            const finalBox = (isSingleAction || isRepetitive) ? null : box;
+            const finalCombo = (isSingleAction || isRepetitive) ? null : combo;
+
+            newPlays.push({ betNumber: numStr, gameMode: mode !== '-' ? mode : 'Pick 3', straight, box: finalBox, combo: finalCombo });
         }
         setPlays(prev => [...newPlays.reverse(), ...prev]);
     };
@@ -197,7 +220,14 @@ const WizardModal: React.FC<WizardModalProps> = ({ isOpen, onClose, onAddPlays, 
         for (let i = s; i <= end; i++) {
             const numStr = String(i).padStart(pad, '0');
             const mode = determineGameMode(numStr, selectedTracks, pulitoPositions);
-            newPlays.push({ betNumber: numStr, gameMode: mode !== '-' ? mode : 'Pick 3', straight, box, combo });
+            
+            // --- FILTER INVALID WAGERS ---
+            const isSingleAction = mode.startsWith('Single Action');
+            const isRepetitive = isRepetitiveNumber(numStr);
+            const finalBox = (isSingleAction || isRepetitive) ? null : box;
+            const finalCombo = (isSingleAction || isRepetitive) ? null : combo;
+
+            newPlays.push({ betNumber: numStr, gameMode: mode !== '-' ? mode : 'Pick 3', straight, box: finalBox, combo: finalCombo });
         }
         setPlays(prev => [...newPlays.reverse(), ...prev]);
     };
@@ -405,13 +435,23 @@ const WizardModal: React.FC<WizardModalProps> = ({ isOpen, onClose, onAddPlays, 
                     const b = normalizeAmount(r.boxAmount);
                     const c = normalizeAmount(r.comboAmount);
 
-                    return expanded.map(numStr => ({
-                        betNumber: numStr,
-                        gameMode: determineGameMode(numStr, selectedTracks, pulitoPositions) !== '-' ? determineGameMode(numStr, selectedTracks, pulitoPositions) : 'Pick 3',
-                        straight: s,
-                        box: b,
-                        combo: c
-                    }));
+                    return expanded.map(numStr => {
+                        const gameMode = determineGameMode(numStr, selectedTracks, pulitoPositions) !== '-' ? determineGameMode(numStr, selectedTracks, pulitoPositions) : 'Pick 3';
+                        
+                        // Filter logic for batch processing too
+                        const isSingleAction = gameMode.startsWith('Single Action');
+                        const isRepetitive = isRepetitiveNumber(numStr);
+                        const finalBox = (isSingleAction || isRepetitive) ? null : b;
+                        const finalCombo = (isSingleAction || isRepetitive) ? null : c;
+
+                        return {
+                            betNumber: numStr,
+                            gameMode,
+                            straight: s,
+                            box: finalBox,
+                            combo: finalCombo
+                        };
+                    });
                 });
 
                 setPlays(prev => [...newPlays.reverse(), ...prev]);

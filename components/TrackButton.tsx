@@ -117,8 +117,8 @@ const TrackButton: React.FC<TrackButtonProps> = ({ trackId, trackName, isSelecte
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
 
-                <div className="absolute bottom-1 left-0 w-full flex justify-center gap-1.5 z-20 px-1">
-                    {[1, 2, 3, 4].map(pos => {
+                <div className="absolute bottom-1 left-0 w-full flex justify-center gap-0.5 z-20 px-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7].map(pos => {
                         const isPositionSelected = positions?.includes(pos);
                         return (
                             <button
@@ -127,9 +127,9 @@ const TrackButton: React.FC<TrackButtonProps> = ({ trackId, trackName, isSelecte
                                     e.stopPropagation();
                                     onPositionClick?.(pos);
                                 }}
-                                className={`w-5 h-5 text-[9px] rounded-full flex items-center justify-center font-bold transition-all duration-200 shadow-sm border ${
+                                className={`flex-1 h-5 text-[8px] sm:text-[9px] rounded-sm flex items-center justify-center font-bold transition-all duration-200 shadow-sm border ${
                                     isPositionSelected 
-                                    ? 'bg-neon-cyan text-black border-neon-cyan shadow-[0_0_5px_theme(colors.neon-cyan)] scale-105' 
+                                    ? 'bg-neon-cyan text-black border-neon-cyan shadow-[0_0_5px_theme(colors.neon-cyan)] z-30 scale-110' 
                                     : 'bg-black/40 text-white border-white/30 hover:bg-white/20'
                                 }`}
                             >
