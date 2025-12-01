@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DEFAULT_PRIZE_TABLE, GAME_RULES_TEXT } from '../constants';
 import { localDbService } from '../services/localDbService';
 
@@ -15,6 +14,36 @@ const CalculatorModal: React.FC<CalculatorModalProps> = ({ isOpen, onClose }) =>
     const [isNY, setIsNY] = useState(true);
     const [activeRule, setActiveRule] = useState<number | null>(null);
     const prizeTable = localDbService.getPrizeTable();
+
+    // --- SIMULATOR STATE ---
+    const [simBet, setSimBet] = useState('');
+    const [simMode, setSimMode] = useState('Pick 3');
+    const [simStr, setSimStr] = useState('');
+    const [simBox, setSimBox] = useState('');
+    const [simCom, setSimCom] = useState('');
+    const [simRes1, setSimRes1] = useState('');
+    const [simRes2, setSimRes2] = useState('');
+    const [simRes3, setSimRes3] = useState('');
+    const [simResP3, setSimResP3] = useState('');
+    const [simResP4, setSimResP4] = useState('');
+
+    // --- AUTO-FILL EFFECTS ---
+    useEffect(() => {
+        const p3 = simResP3.replace(/\D/g, '');
+        if (p3.length >= 2) {
+            setSimRes1(p3.slice(-2)); // 1st = Pick 3 Last 2
+        }
+    }, [simResP3]);
+
+    useEffect(() => {
+        const p4 = simResP4.replace(/\D/g, '');
+        if (p4.length >= 2) {
+            setSimRes2(p4.slice(0, 2)); // 2nd = Pick 4 First 2
+        }
+        if (p4.length >= 4) {
+            setSimRes3(p4.slice(-2));   // 3rd = Pick 4 Last 2
+        }
+    }, [simResP4]);
 
     if (!isOpen) return null;
 

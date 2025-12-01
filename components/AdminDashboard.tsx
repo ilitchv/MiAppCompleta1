@@ -8,6 +8,7 @@ import { fileToBase64, formatWinningResult } from '../utils/helpers';
 import { interpretWinningResultsImage, interpretWinningResultsText } from '../services/geminiService';
 import { processLocalOcr } from '../services/localOcrService';
 import { useSound } from '../hooks/useSound';
+import TicketModal from './TicketModal';
 
 // Declare jsQR from global scope
 declare var jsQR: any;
@@ -65,6 +66,8 @@ const TRACK_MAP: Record<string, string> = {
 
     // Santo Domingo
     'La Primera': 'rd/primer/AM',
+    'La Primera AM': 'rd/primer/AM',
+    'La Primera PM': 'rd/primer/PM',
     'Lotedom': 'rd/lotedom/Tarde',
     'La Suerte': 'rd/suerte/AM',
     'La Suerte PM': 'rd/suerte/PM',
@@ -74,12 +77,14 @@ const TRACK_MAP: Record<string, string> = {
     'Quiniela Pale': 'rd/quiniela/Diario',
     'Nacional': 'rd/nacional/Noche',
 
-    // Special
+    // Special / Legacy
     'New York Horses': 'special/ny-horses/R1',
     'Brooklyn Midday': 'special/ny-bk/AM',
     'Brooklyn Evening': 'special/ny-bk/PM',
     'Front Midday': 'special/ny-fp/AM',
     'Front Evening': 'special/ny-fp/PM',
+    'Venezuela': 'special/venezuela', 
+    'Pulito': 'special/pulito',       
 };
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
@@ -91,7 +96,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [tickets, setTickets] = useState<TicketData[]>([]);
     const [filteredTickets, setFilteredTickets] = useState<TicketData[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [dateFilter, setDateFilter] = useState('');
+    const [dateRange, setDateRange] = useState<{start: string, end: string}>({
+        start: new Date().toISOString().split('T')[0],
+        end: new Date().toISOString().split('T')[0]
+    });
     const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
     const [isLoadingTickets, setIsLoadingTickets] = useState(false);
 
@@ -106,7 +114,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [results, setResults] = useState<WinningResult[]>([]);
     const [resultsSearch, setResultsSearch] = useState('');
     const [isAddResultOpen, setIsAddResultOpen] = useState(false);
-    const [viewResultsDate, setViewResultsDate] = useState(new Date().toISOString().split('T')[0]); // Date for VIEWING results
+    const [resultsDateRange, setResultsDateRange] = useState<{start: string, end: string}>({
+        start: new Date().toISOString().split('T')[0],
+        end: new Date().toISOString().split('T')[0]
+    });
+    const [viewResultsDate, setViewResultsDate] = useState(new Date().toISOString().split('T')[0]);
     
     // DELETE & AUDIT STATE
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -120,15 +132,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [ocrText, setOcrText] = useState('');
     const [isProcessingOcr, setIsProcessingOcr] = useState(false);
     const [ocrResults, setOcrResults] = useState<OcrStagingRow[]>([]);
-    const [ocrDate, setOcrDate] = useState(new Date().toISOString().split('T')[0]); // Date for UPLOADING results
+    const [ocrDate, setOcrDate] = useState(new Date().toISOString().split('T')[0]);
     const ocrFileInputRef = useRef<HTMLInputElement>(null);
     const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
     const [successCount, setSuccessCount] = useState(0);
 
     // PAYOUTS STATE
     const [prizeTable, setPrizeTable] = useState<PrizeTable>(DEFAULT_PRIZE_TABLE);
-    const [winners, setWinners] = useState<CalculationResult[]>([]);
-    const [isCalculating, setIsCalculating] = useState(false);
     
     // CALCULATOR TOOL STATE
     const [calcGame, setCalcGame] = useState('Pick 3');
@@ -158,14 +168,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [newResultP3, setNewResultP3] = useState('');
     const [newResultP4, setNewResultP4] = useState('');
 
-    // Flatten tracks for dropdown using RESULTS_CATALOG
     const allTracks = RESULTS_CATALOG.map(c => ({
         id: c.id,
         name: `${c.lottery} - ${c.draw}`,
         originalName: c.lottery
     }));
 
-    // LOAD DATA
     const loadResultsFromDb = () => {
         const resultData = localDbService.getResults();
         resultData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -202,7 +210,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         fetchAllData();
     }, []);
 
-    // FILTER TICKETS
     useEffect(() => {
         let res = tickets;
         if (searchTerm) {
@@ -212,16 +219,125 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 t.tracks.some(tr => tr.toLowerCase().includes(lower))
             );
         }
-        if (dateFilter) {
+        
+        if (dateRange.start && dateRange.end) {
             res = res.filter(t => {
                 const tDate = new Date(t.transactionDateTime).toISOString().split('T')[0];
-                return tDate === dateFilter;
+                return tDate >= dateRange.start && tDate <= dateRange.end;
             });
+        } else if (dateRange.start) {
+             res = res.filter(t => new Date(t.transactionDateTime).toISOString().split('T')[0] === dateRange.start);
         }
-        setFilteredTickets(res);
-    }, [searchTerm, dateFilter, tickets]);
 
-    // --- WINNERS AUDIT LOGIC ---
+        setFilteredTickets(res);
+    }, [searchTerm, dateRange, tickets]);
+
+    useEffect(() => {
+        const p3 = newResultP3.replace(/\D/g, '');
+        if (p3.length >= 2) {
+            setNewResult1st(p3.slice(-2));
+        }
+    }, [newResultP3]);
+
+    useEffect(() => {
+        const p4 = newResultP4.replace(/\D/g, '');
+        if (p4.length >= 2) {
+            setNewResult2nd(p4.slice(0, 2));
+        }
+        if (p4.length >= 4) {
+            setNewResult3rd(p4.slice(-2));
+        }
+    }, [newResultP4]);
+
+    // --- CONSOLIDATED PLAYS VIEW ---
+    const flattenedPlays = useMemo(() => {
+        return filteredTickets.flatMap(t => {
+            return t.plays.map(play => {
+                let totalWon = 0;
+                let isWinner = false;
+                let isPending = false;
+                
+                // Collect matching tracks for display
+                const winningTracks: string[] = [];
+
+                t.tracks.forEach(track => {
+                    // Logic: Now delegated to prizeCalculator. 
+                    // We attempt to calculate for EVERY track.
+                    
+                    let trackWin = 0;
+                    let trackPending = false;
+
+                    t.betDates.forEach(date => {
+                        const resultId = TRACK_MAP[track];
+                        // Smart Lookup: ID Match OR Name Match (for custom tracks)
+                        const result = results.find(r => (r.lotteryId === resultId || r.lotteryName === track) && r.date === date);
+
+                        if (result) {
+                            const wins = calculateWinnings(play, result, prizeTable);
+                            const winAmount = wins.reduce((sum, w) => sum + w.prizeAmount, 0);
+                            if (winAmount > 0) {
+                                trackWin += winAmount;
+                            }
+                        } else {
+                            trackPending = true;
+                        }
+                    });
+
+                    if (trackWin > 0) {
+                        totalWon += trackWin;
+                        winningTracks.push(track);
+                        isWinner = true;
+                    }
+                    if (trackPending) isPending = true;
+                });
+
+                // Status Logic
+                let status = 'PENDING';
+                let color = 'text-yellow-500';
+                let bg = 'bg-yellow-500/20';
+
+                if (isWinner) {
+                    status = 'WINNER';
+                    color = 'text-green-400';
+                    bg = 'bg-green-500/20';
+                } else if (!isPending) {
+                    status = 'LOSER';
+                    color = 'text-red-400';
+                    bg = 'bg-red-500/20';
+                }
+
+                // If winner, show only winning tracks. If pending/loser, show all tracks.
+                const displayTracks = isWinner 
+                    ? winningTracks.join(', ') 
+                    : t.tracks.join(', ');
+
+                return {
+                    ...play,
+                    parentTicketNumber: t.ticketNumber,
+                    parentTransactionDate: t.transactionDateTime,
+                    finalTimestamp: new Date(t.transactionDateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                    targetDate: t.betDates.join(', '), // Plural Dates
+                    targetTrack: displayTracks,        // Plural/Grouped Tracks
+                    status,
+                    color,
+                    bg,
+                    amount: totalWon
+                };
+            });
+        });
+    }, [filteredTickets, results, prizeTable]);
+
+    const displayedResults = results.filter(r => {
+        if (resultsDateRange.start && resultsDateRange.end) {
+            if (r.date < resultsDateRange.start || r.date > resultsDateRange.end) return false;
+        } else if (resultsDateRange.start) {
+            if (r.date !== resultsDateRange.start) return false;
+        }
+        if (resultsSearch && !r.lotteryName.toLowerCase().includes(resultsSearch.toLowerCase())) return false;
+        return true;
+    });
+
+    // --- CONSOLIDATED AUDIT STATS (Winners Tab) ---
     const auditStats = useMemo(() => {
         let totalPayout = 0;
         const winningTicketsMap = new Map<string, boolean>();
@@ -232,50 +348,67 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             const ticketTime = new Date(ticket.transactionDateTime).getTime();
 
             ticket.plays.forEach(play => {
+                // Group by DATE first (User question addressed: Dates are separate events)
                 ticket.betDates.forEach(date => {
+                    
+                    let dateTotalWin = 0;
+                    const winningTracks: string[] = [];
+                    const matchTypes: Set<string> = new Set();
+                    let resultNumbersStr = '';
+                    let minIntegrityOk = true;
+                    let maxTimeGap = 0;
+
+                    // Iterate tracks for this date/play combo
                     ticket.tracks.forEach(trackName => {
                         const resultId = TRACK_MAP[trackName];
-                        if (!resultId) return;
-
-                        const result = results.find(r => r.lotteryId === resultId && r.date === date);
+                        // Smart Lookup: ID Match OR Name Match
+                        const result = results.find(r => (r.lotteryId === resultId || r.lotteryName === trackName) && r.date === date);
 
                         if (result) {
                             const resultTime = new Date(result.createdAt).getTime();
                             const integrityOk = ticketTime < (resultTime + 60000); 
-
                             const wins = calculateWinnings(play, result, prizeTable);
                             
                             if (wins.length > 0) {
-                                const totalWinForPlay = wins.reduce((sum, w) => sum + w.prizeAmount, 0);
-                                
-                                if (totalWinForPlay > 0) {
-                                    const winnerEntry = {
-                                        id: `${ticket.ticketNumber}-${play.jugadaNumber}-${trackName}-${date}`,
-                                        ticketNumber: ticket.ticketNumber,
-                                        date: date, 
-                                        track: trackName,
-                                        betNumber: play.betNumber,
-                                        gameMode: play.gameMode,
-                                        prize: totalWinForPlay,
-                                        integrityOk,
-                                        matchType: wins.map(w => w.matchType).join(', '),
-                                        resultNumbers: formatWinningResult(result),
-                                        timeGapSeconds: Math.round((resultTime - ticketTime) / 1000),
-                                        soldAt: ticket.transactionDateTime
-                                    };
-
-                                    winnersList.push(winnerEntry);
-                                    
-                                    if (integrityOk) {
-                                        totalPayout += totalWinForPlay;
-                                        winningTicketsMap.set(ticket.ticketNumber, true);
-                                    } else {
-                                        integrityBreaches.push(winnerEntry);
-                                    }
+                                const winAmt = wins.reduce((sum, w) => sum + w.prizeAmount, 0);
+                                if (winAmt > 0) {
+                                    dateTotalWin += winAmt;
+                                    winningTracks.push(trackName);
+                                    wins.forEach(w => matchTypes.add(w.matchType));
+                                    resultNumbersStr = formatWinningResult(result); // Using last result found for display
+                                    if (!integrityOk) minIntegrityOk = false;
+                                    maxTimeGap = Math.max(maxTimeGap, Math.round((resultTime - ticketTime) / 1000));
                                 }
                             }
                         }
                     });
+
+                    // If we have a win for this date (across 1 or more tracks)
+                    if (dateTotalWin > 0) {
+                        const winnerEntry = {
+                            id: `${ticket.ticketNumber}-${play.jugadaNumber}-${date}`,
+                            ticketNumber: ticket.ticketNumber,
+                            date: date, 
+                            track: winningTracks.join(', '), // CONSOLIDATED TRACKS
+                            betNumber: play.betNumber,
+                            gameMode: play.gameMode,
+                            prize: dateTotalWin,
+                            integrityOk: minIntegrityOk,
+                            matchType: Array.from(matchTypes).join(', '),
+                            resultNumbers: resultNumbersStr, // Approximate if multiple tracks win differently
+                            timeGapSeconds: maxTimeGap,
+                            soldAt: ticket.transactionDateTime
+                        };
+
+                        winnersList.push(winnerEntry);
+                        
+                        if (minIntegrityOk) {
+                            totalPayout += dateTotalWin;
+                            winningTicketsMap.set(ticket.ticketNumber, true);
+                        } else {
+                            integrityBreaches.push(winnerEntry);
+                        }
+                    }
                 });
             });
         });
@@ -290,25 +423,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         };
     }, [tickets, results, prizeTable]);
 
-    const flattenedPlays = filteredTickets.flatMap(t => 
-        t.plays.map(p => ({
-            ...p,
-            parentTicketNumber: t.ticketNumber,
-            parentTransactionDate: t.transactionDateTime,
-            parentBetDates: t.betDates,
-            parentTracks: t.tracks,
-            finalTimestamp: p.timestamp || t.transactionDateTime 
-        }))
-    );
-
-    // Filter Results for Display
-    const displayedResults = results.filter(r => {
-        if (r.date !== viewResultsDate) return false;
-        if (resultsSearch && !r.lotteryName.toLowerCase().includes(resultsSearch.toLowerCase())) return false;
-        return true;
-    });
-
-    // --- HELPER: Robust Parsing Logic ---
     const parseRowValue = (val: string) => {
         const cleaned = val.replace(/-{2,}|x{2,}/gi, '').trim();
         const parts = cleaned.split(/[\s\-\t,]+/).filter(p => /^\d+$/.test(p));
@@ -330,7 +444,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         return { f, s, t, p3, p4 };
     };
 
-    // --- SCANNER LOGIC ---
     const startScan = async () => {
         setIsScanning(true);
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -440,10 +553,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setTimeout(() => osc.stop(), 100);
     };
 
-    // --- MANUAL SAVE RESULT ---
     const handleSaveResult = (e: React.FormEvent) => {
         e.preventDefault();
-        // Allow saving if at least P3 or P4 or 1st is present
         if (!newResultTrack || !viewResultsDate || (!newResult1st && !newResultP3 && !newResultP4)) return;
         
         const trackObj = allTracks.find(t => t.id === newResultTrack);
@@ -453,7 +564,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         let s = newResult2nd;
         let t = newResult3rd;
 
-        // Auto-calculate Venezuela positions if empty but P3/P4 exist (Final fallback)
         if (!f && !s && !t) {
              const p3Clean = newResultP3.replace(/\D/g, '');
              const p4Clean = newResultP4.replace(/\D/g, '');
@@ -481,7 +591,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setNewResult1st(''); setNewResult2nd(''); setNewResult3rd(''); setNewResultP3(''); setNewResultP4('');
     };
 
-    // --- DELETE / EDIT LOGIC ---
     const handleEditInitiate = (res: WinningResult) => {
         setViewResultsDate(res.date);
         setNewResultTrack(res.lotteryId);
@@ -518,7 +627,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setIsAuditLogOpen(true);
     };
 
-    // --- OCR LOGIC ---
     const handleOcrFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -628,7 +736,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         const trackObj = allTracks.find(t => t.id === row.targetId);
         if (!trackObj) return;
 
-        // Robust Parser logic
         let { f, s, t, p3, p4 } = parseRowValue(row.value);
 
         if ((!f || !s || !t) && (p3 || p4)) {
@@ -653,7 +760,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setViewResultsDate(ocrDate);
     };
 
-    // --- BATCH SAVE FOR OCR ---
     const handleSaveAllOcrRows = () => {
         const pendingRows = ocrResults.filter(r => r.status !== 'saved');
         if (pendingRows.length === 0) return alert("No pending rows to save.");
@@ -705,7 +811,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         }
     };
 
-    // --- PAYOUTS LOGIC ---
     const handlePrizeTableChange = (game: string, type: string, value: string) => {
         const newVal = parseFloat(value);
         if (isNaN(newVal)) return;
@@ -716,7 +821,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         localDbService.savePrizeTable(newTable);
     };
 
-    // --- MANUAL CALCULATOR LOGIC ---
     const getCalculatedPayout = () => {
         const gameTable = prizeTable[calcGame];
         if (!gameTable) return 0;
@@ -726,7 +830,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         return isNaN(wagerVal) ? 0 : wagerVal * multiplier;
     };
 
-    // --- SIMULATOR LOGIC ---
     const handleRunSimulator = () => {
         const mockPlay: Play = {
             id: 0,
@@ -761,7 +864,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     
     return (
         <div className="min-h-screen bg-slate-900 text-gray-200 font-sans" onPaste={activeTab === 'ocr' ? handlePaste : undefined}>
-            {/* Header */}
             <header className="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center sticky top-0 z-10 shadow-md">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded bg-gradient-to-br from-neon-cyan to-blue-600 flex items-center justify-center text-black font-black text-lg shadow-[0_0_15px_rgba(0,255,255,0.3)]">
@@ -815,19 +917,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
                                 />
-                                <input 
-                                    type="date" 
-                                    className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm focus:border-neon-cyan outline-none text-gray-300"
-                                    value={dateFilter}
-                                    onChange={e => setDateFilter(e.target.value)}
-                                />
-                                <button onClick={() => {setSearchTerm(''); setDateFilter('')}} className="text-xs text-slate-400 hover:text-white underline">Clear</button>
+                                <div className="flex items-center gap-2 bg-slate-900 border border-slate-600 rounded-lg px-2">
+                                    <span className="text-xs font-bold text-slate-500">FROM</span>
+                                    <input 
+                                        type="date" 
+                                        className="bg-transparent py-2 text-sm focus:outline-none text-white w-32"
+                                        value={dateRange.start}
+                                        onChange={e => setDateRange({...dateRange, start: e.target.value})}
+                                    />
+                                    <span className="text-slate-600">|</span>
+                                    <span className="text-xs font-bold text-slate-500">TO</span>
+                                    <input 
+                                        type="date" 
+                                        className="bg-transparent py-2 text-sm focus:outline-none text-white w-32"
+                                        value={dateRange.end}
+                                        onChange={e => setDateRange({...dateRange, end: e.target.value})}
+                                    />
+                                </div>
+                                <button onClick={() => {setSearchTerm(''); setDateRange({start: new Date().toISOString().split('T')[0], end: new Date().toISOString().split('T')[0]})}} className="text-xs text-slate-400 hover:text-white underline">Clear</button>
                             </div>
                             
                             <div className="flex items-center gap-4">
                                 {isLoadingTickets && (
                                     <span className="text-xs text-neon-cyan animate-pulse flex items-center gap-2">
-                                        <div className="w-2 h-2 bg-neon-cyan rounded-full"></div> Syncing with Cloud...
+                                        <div className="w-2 h-2 bg-neon-cyan rounded-full"></div> Syncing...
                                     </span>
                                 )}
                                 <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
@@ -870,35 +983,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                     <table className="w-full text-xs text-left text-gray-300 whitespace-nowrap">
                                         <thead className="bg-slate-900/90 text-[10px] uppercase font-bold border-b border-slate-700 sticky top-0 z-10 text-gray-500">
                                             <tr>
-                                                <th className="p-3">Ticket Number</th>
-                                                <th className="p-3">Transaction DateTime</th>
-                                                <th className="p-3">Jugada Number</th>
-                                                <th className="p-3">Timestamp</th>
-                                                <th className="p-3">Bet Dates</th>
+                                                <th className="p-3">Ticket</th>
+                                                <th className="p-3">Date</th>
+                                                <th className="p-3">Sold Time</th>
                                                 <th className="p-3">Tracks</th>
                                                 <th className="p-3">Bet Number</th>
                                                 <th className="p-3">Game Mode</th>
-                                                <th className="p-3 text-right">Straight ($)</th>
-                                                <th className="p-3 text-right">Box ($)</th>
-                                                <th className="p-3 text-right">Combo ($)</th>
-                                                <th className="p-3 text-right">Total ($)</th>
+                                                <th className="p-3 text-right">Str/Box/Com</th>
+                                                <th className="p-3 text-right">Cost</th>
+                                                <th className="p-3 text-center">Status</th>
+                                                <th className="p-3 text-right">Won ($)</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700 bg-slate-800">
                                             {flattenedPlays.map((play, idx) => (
-                                                <tr key={`${play.parentTicketNumber}_${idx}`} className="hover:bg-slate-700/30 transition-colors">
+                                                <tr key={`${play.parentTicketNumber}_${idx}_play`} className="hover:bg-slate-700/30 transition-colors">
                                                     <td className="p-3 font-mono text-neon-cyan">{play.parentTicketNumber}</td>
-                                                    <td className="p-3">{new Date(play.parentTransactionDate).toLocaleString()}</td>
-                                                    <td className="p-3 text-center">{play.jugadaNumber}</td>
-                                                    <td className="p-3 font-mono text-slate-500">{new Date(play.finalTimestamp as string).toLocaleTimeString()}</p>
-                                                    <td className="p-3 max-w-[150px] truncate" title={play.parentBetDates.join(', ')}>{play.parentBetDates.join(', ')}</td>
-                                                    <td className="p-3 max-w-[200px] truncate" title={play.parentTracks.join(', ')}>{play.parentTracks.join(', ')}</td>
+                                                    <td className="p-3 font-bold text-white">{play.targetDate}</td>
+                                                    <td className="p-3 text-slate-400 font-mono text-[10px]">
+                                                        {play.finalTimestamp}
+                                                    </td>
+                                                    <td className="p-3 max-w-[200px] truncate font-bold text-slate-300" title={play.targetTrack}>
+                                                        {play.targetTrack}
+                                                    </td>
                                                     <td className="p-3 font-bold font-mono text-white text-base">{play.betNumber}</td>
-                                                    <td className="p-3">{play.gameMode}</td>
-                                                    <td className="p-3 text-right font-mono">{play.straightAmount ? play.straightAmount.toFixed(2) : '-'}</td>
-                                                    <td className="p-3 text-right font-mono">{play.boxAmount ? play.boxAmount.toFixed(2) : '-'}</td>
-                                                    <td className="p-3 text-right font-mono">{play.comboAmount ? play.comboAmount.toFixed(2) : '-'}</td>
-                                                    <td className="p-3 text-right font-bold text-green-400">${play.totalAmount.toFixed(2)}</td>
+                                                    <td className="p-3 text-xs uppercase tracking-wider">{play.gameMode}</td>
+                                                    <td className="p-3 text-right font-mono text-[10px]">
+                                                        {play.straightAmount ? `$${play.straightAmount}` : '-'} / {play.boxAmount ? `$${play.boxAmount}` : '-'} / {play.comboAmount ? `$${play.comboAmount}` : '-'}
+                                                    </td>
+                                                    <td className="p-3 text-right font-bold">${(play.totalAmount).toFixed(2)}</td>
+                                                    <td className="p-3 text-center">
+                                                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold border border-current ${play.color} ${play.bg}`}>
+                                                            {play.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className={`p-3 text-right font-bold ${play.amount > 0 ? 'text-green-400' : 'text-gray-500'}`}>
+                                                        ${play.amount.toFixed(2)}
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -909,13 +1030,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </>
                 )}
 
-                {/* RESULTS TAB (RESTORING COMPACT TABLE) */}
+                {/* RESULTS TAB */}
                 {activeTab === 'results' && (
                     <div className="space-y-6">
                         {/* Toolbar */}
                         <div className="flex flex-wrap gap-4 items-center justify-between bg-slate-800 p-4 rounded-xl border border-slate-700">
                             <div className="flex items-center gap-4">
-                                <input type="date" value={viewResultsDate} onChange={e => setViewResultsDate(e.target.value)} className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white outline-none focus:border-neon-cyan text-sm" />
+                                <div className="flex items-center gap-2 bg-slate-900 border border-slate-600 rounded-lg px-2">
+                                    <span className="text-xs font-bold text-slate-500">FROM</span>
+                                    <input 
+                                        type="date" 
+                                        className="bg-transparent py-2 text-sm focus:outline-none text-white w-32"
+                                        value={resultsDateRange.start}
+                                        onChange={e => setResultsDateRange({...resultsDateRange, start: e.target.value})}
+                                    />
+                                    <span className="text-slate-600">|</span>
+                                    <span className="text-xs font-bold text-slate-500">TO</span>
+                                    <input 
+                                        type="date" 
+                                        className="bg-transparent py-2 text-sm focus:outline-none text-white w-32"
+                                        value={resultsDateRange.end}
+                                        onChange={e => setResultsDateRange({...resultsDateRange, end: e.target.value})}
+                                    />
+                                </div>
                                 <input type="text" placeholder="Filter by Name..." value={resultsSearch} onChange={e => setResultsSearch(e.target.value)} className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white outline-none focus:border-neon-cyan text-sm w-48" />
                             </div>
                             <div className="flex gap-3">
@@ -934,18 +1071,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                 <table className="w-full text-sm text-left text-gray-300">
                                     <thead className="bg-slate-900/50 text-xs uppercase font-bold border-b border-slate-700 text-gray-500">
                                         <tr>
-                                            <th className="p-4 w-1/4">Lotería</th>
-                                            <th className="p-4 text-center text-blue-400 w-20">1st</th>
-                                            <th className="p-4 text-center w-20">2nd</th>
-                                            <th className="p-4 text-center w-20">3rd</th>
-                                            <th className="p-4 text-center text-purple-400 w-24">Pick 3</th>
-                                            <th className="p-4 text-center text-orange-400 w-24">Pick 4</th>
+                                            <th className="p-4 w-1/6">Draw Date</th>
+                                            <th className="p-4 w-1/5">Lotería</th>
+                                            <th className="p-4 text-center text-blue-400 w-16">1st</th>
+                                            <th className="p-4 text-center w-16">2nd</th>
+                                            <th className="p-4 text-center w-16">3rd</th>
+                                            <th className="p-4 text-center text-purple-400 w-20">Pick 3</th>
+                                            <th className="p-4 text-center text-orange-400 w-20">Pick 4</th>
+                                            <th className="p-4 text-center w-24">Posted At</th>
                                             <th className="p-4 text-right w-12">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-700">
                                         {displayedResults.map(res => (
                                             <tr key={res.id} className="hover:bg-slate-700/50 transition-colors">
+                                                <td className="p-4 font-mono font-bold text-white text-xs">{res.date}</td>
                                                 <td className="p-4 font-bold text-white">
                                                     {res.lotteryName} <span className="text-xs font-normal text-slate-500 ml-1">({res.lotteryId.split('/').pop()})</span>
                                                 </td>
@@ -954,6 +1094,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                                 <td className="p-4 text-center font-mono text-base">{res.third || '---'}</td>
                                                 <td className="p-4 text-center font-mono text-purple-400">{res.pick3 || '---'}</td>
                                                 <td className="p-4 text-center font-mono text-orange-400">{res.pick4 || '---'}</td>
+                                                <td className="p-4 text-center font-mono text-xs text-gray-500">{new Date(res.createdAt).toLocaleTimeString()}</td>
                                                 <td className="p-4 text-right flex justify-end gap-2">
                                                     <button onClick={() => handleEditInitiate(res)} className="text-blue-400 hover:text-blue-300 p-2 hover:bg-blue-500/10 rounded">
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -965,7 +1106,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                             </tr>
                                         ))}
                                         {displayedResults.length === 0 && (
-                                            <tr><td colSpan={7} className="p-12 text-center text-gray-500">No results found for {viewResultsDate}.</td></tr>
+                                            <tr><td colSpan={9} className="p-12 text-center text-gray-500">No results found for range.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -974,7 +1115,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </div>
                 )}
 
-                {/* WINNERS TAB (UNCHANGED) */}
+                {/* WINNERS TAB */}
                 {activeTab === 'winners' && (
                     <div className="space-y-6">
                         {/* Stats Cards */}
@@ -1015,7 +1156,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                         <tr>
                                             <th className="p-4">Ticket</th>
                                             <th className="p-4">Date</th>
-                                            <th className="p-4">Track</th>
+                                            <th className="p-4">Tracks</th>
                                             <th className="p-4">Play</th>
                                             <th className="p-4">Match Type</th>
                                             <th className="p-4 text-right">Prize</th>
@@ -1027,7 +1168,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                             <tr key={idx} className="hover:bg-slate-700/50 transition-colors">
                                                 <td className="p-4 font-mono text-neon-cyan">{win.ticketNumber}</td>
                                                 <td className="p-4">{win.date}</td>
-                                                <td className="p-4 text-white text-xs">{win.track}</td>
+                                                <td className="p-4 text-white text-xs font-bold">{win.track}</td>
                                                 <td className="p-4 font-bold text-white">{win.betNumber} <span className="text-xs text-slate-500 font-normal">({win.gameMode})</span></td>
                                                 <td className="p-4 text-xs">{win.matchType} <span className="text-slate-500">vs {win.resultNumbers}</span></td>
                                                 <td className="p-4 text-right font-bold text-green-400">${win.prize.toFixed(2)}</td>
@@ -1050,7 +1191,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </div>
                 )}
 
-                {/* OCR TAB (RESTORING SPLIT VIEW) */}
+                {/* OCR TAB */}
                 {activeTab === 'ocr' && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-140px)]">
                         {/* LEFT: CONTROLS & PREVIEW */}
@@ -1198,7 +1339,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </div>
                 )}
 
-                {/* PAYOUTS TAB (UNCHANGED) */}
+                {/* PAYOUTS TAB */}
                 {activeTab === 'payouts' && (
                     <div className="space-y-6">
                         {/* TOP: CALCULATOR & RULES */}
@@ -1377,7 +1518,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 )}
             </div>
 
-            {/* MODALS (Delete, Add Result) */}
+            {/* MODALS */}
             {isDeleteModalOpen && (
                 <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50">
                     <div className="bg-slate-800 p-6 rounded-xl border border-red-500/50 shadow-2xl max-w-sm w-full text-center">
@@ -1412,7 +1553,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 </div>
             )}
 
-            {/* ADD MANUAL RESULT MODAL (RESTORING ORIGINAL) */}
+            {selectedTicket && (
+                <TicketModal 
+                    isOpen={!!selectedTicket}
+                    onClose={() => setSelectedTicket(null)}
+                    plays={selectedTicket.plays}
+                    selectedTracks={selectedTicket.tracks}
+                    selectedDates={selectedTicket.betDates}
+                    grandTotal={selectedTicket.grandTotal}
+                    ticketNumber={selectedTicket.ticketNumber}
+                    isConfirmed={true}
+                    setIsConfirmed={() => {}}
+                    setTicketNumber={() => {}}
+                    ticketImageBlob={null}
+                    setTicketImageBlob={() => {}}
+                    terminalId="ADMIN-VIEW"
+                    cashierId="ADMIN"
+                    onSaveTicket={() => {}}
+                    isSaving={false}
+                    serverHealth="online"
+                    lastSaveStatus="success"
+                    variant="admin"
+                    /* Fix Point 2: Pass full results DB to TicketModal for inline calculation */
+                    resultsContext={results} 
+                />
+            )}
+
+            {/* MANUAL RESULT MODAL */}
             {isAddResultOpen && (
                 <div className="fixed inset-0 bg-black/90 z-[250] flex items-center justify-center p-4">
                     <div className="bg-slate-800 w-full max-w-md p-6 rounded-xl border border-slate-600 shadow-2xl">
@@ -1436,7 +1603,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                 <div className="grid grid-cols-3 gap-3">
                                     <div>
                                         <label className="block text-center text-xs font-bold text-blue-400 mb-1">1st</label>
-                                        <input type="text" maxLength={2} required value={newResult1st} onChange={e=>setNewResult1st(e.target.value)} className="w-full bg-black border border-slate-600 rounded p-2 text-center text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="00" />
+                                        <input type="text" maxLength={2} value={newResult1st} onChange={e=>setNewResult1st(e.target.value)} className="w-full bg-black border border-slate-600 rounded p-2 text-center text-xl font-bold text-white focus:border-blue-500 outline-none" placeholder="00" />
                                     </div>
                                     <div>
                                         <label className="block text-center text-xs font-bold text-gray-400 mb-1">2nd</label>
@@ -1465,18 +1632,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                 <button type="submit" className="px-6 py-2 rounded bg-neon-cyan text-black font-bold hover:brightness-110 transition-all shadow-[0_0_10px_rgba(0,255,255,0.3)]">Save</button>
                             </div>
                         </form>
-                    </div>
-                </div>
-            )}
-
-            {showSuccessOverlay && (
-                <div className="fixed inset-0 z-[300] flex items-center justify-center pointer-events-none">
-                    <div className="bg-black/80 backdrop-blur-xl border border-neon-green p-8 rounded-2xl shadow-[0_0_50px_rgba(34,197,94,0.4)] flex flex-col items-center animate-in zoom-in duration-300">
-                        <div className="w-20 h-20 bg-neon-green rounded-full flex items-center justify-center mb-4 shadow-[0_0_20px_theme(colors.neon-green)]">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        </div>
-                        <h2 className="text-3xl font-black text-white uppercase tracking-widest mb-2">Success</h2>
-                        <p className="text-lg text-green-400 font-bold">{successCount} Results Saved</p>
                     </div>
                 </div>
             )}

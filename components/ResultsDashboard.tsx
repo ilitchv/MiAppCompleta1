@@ -1,9 +1,9 @@
-
 import React, { useEffect, useState } from 'react';
 import type { LotteryResult } from '../types';
 import { getTrackColorClasses, getAbbreviation, formatWinningResult } from '../utils/helpers';
 import { localDbService } from '../services/localDbService';
 import { getLotteryLogo } from './LotteryLogos';
+import { RESULTS_CATALOG } from '../constants';
 
 const ResultsDashboard: React.FC = () => {
     const [results, setResults] = useState<LotteryResult[]>([]);
@@ -24,17 +24,31 @@ const ResultsDashboard: React.FC = () => {
                 const localData = localDbService.getResults();
                 
                 // Convert WinningResult (Local DB) to LotteryResult (UI/API Type)
-                const localAsLotteryResult: LotteryResult[] = localData.map(r => ({
-                    resultId: r.lotteryId,
-                    country: r.lotteryId.startsWith('rd') ? 'SD' : 'USA', // Simple heuristic
-                    lotteryName: r.lotteryName,
-                    drawName: r.lotteryId.split('/').pop() || 'Draw',
-                    numbers: formatWinningResult(r),
-                    drawDate: r.date,
-                    scrapedAt: r.createdAt,
-                    lastDrawTime: '',
-                    closeTime: ''
-                }));
+                const localAsLotteryResult: LotteryResult[] = localData.map(r => {
+                    // Smart Country Detection
+                    const catalogMatch = RESULTS_CATALOG.find(c => c.id === r.lotteryId);
+                    let detectedCountry: 'USA' | 'SD' | 'SPECIAL' = 'USA';
+                    
+                    if (catalogMatch) {
+                        if (catalogMatch.section === 'rd') detectedCountry = 'SD';
+                        else if (catalogMatch.section === 'special') detectedCountry = 'SPECIAL';
+                        else detectedCountry = 'USA';
+                    } else if (r.lotteryId.startsWith('rd') || r.lotteryName.includes('Real') || r.lotteryName.includes('Nacional')) {
+                        detectedCountry = 'SD';
+                    }
+
+                    return {
+                        resultId: r.lotteryId,
+                        country: detectedCountry,
+                        lotteryName: r.lotteryName,
+                        drawName: r.lotteryId.split('/').pop() || 'Draw',
+                        numbers: formatWinningResult(r),
+                        drawDate: r.date,
+                        scrapedAt: r.createdAt,
+                        lastDrawTime: '',
+                        closeTime: ''
+                    };
+                });
 
                 // 2. Try Fetching API
                 let remoteData: LotteryResult[] = [];

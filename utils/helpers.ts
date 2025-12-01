@@ -1,3 +1,4 @@
+
 import { WinningResult } from '../types';
 
 export const determineGameMode = (betNumber: string, selectedTracks: string[], pulitoPositions: number[]): string => {
@@ -65,6 +66,23 @@ const calcCombos = (str: string): number => {
     return factorial(str.length) / denom;
 };
 
+// Helper to calculate specific Palé combinations
+const calculatePaleCombinations = (betNumber: string): number => {
+    // Expected format "XX-YY" or "XXXYY" (normalized)
+    const cleanBet = betNumber.replace(/[^0-9]/g, '');
+    if (cleanBet.length !== 4) return 4; // Default/Fallback
+
+    const p1 = cleanBet.substring(0, 2);
+    const p2 = cleanBet.substring(2, 4);
+
+    // Calc combos for each part
+    // If it's repetitive (e.g. 22), it has 1 combo.
+    // If it's mixed (e.g. 12), it has 2 combos (12, 21).
+    const combos1 = isRepetitiveNumber(p1) ? 1 : 2;
+    const combos2 = isRepetitiveNumber(p2) ? 1 : 2;
+
+    return combos1 * combos2;
+};
 
 export const calculateRowTotal = (betNumber: string, gameMode: string, stVal: number | null, bxVal: number | null, coVal: number | null): number => {
     if (!betNumber || gameMode === "-") return 0;
@@ -76,26 +94,44 @@ export const calculateRowTotal = (betNumber: string, gameMode: string, stVal: nu
     if (gameMode.startsWith("Pulito-") || gameMode.startsWith("Single Action-")) {
         const positionsPart = gameMode.split('-')[1] || '';
         const positionCount = positionsPart ? positionsPart.split(',').length : 1;
-        return (st + bx) * Math.max(1, positionCount);
+        
+        // Combo Logic for Pulito (Pairs)
+        let comboCost = 0;
+        if (co > 0 && !gameMode.startsWith("Single Action")) {
+             const isDouble = isRepetitiveNumber(betNumber);
+             const comboMultiplier = isDouble ? 1 : 2;
+             comboCost = co * comboMultiplier;
+        }
+
+        return (st + bx + comboCost) * Math.max(1, positionCount);
     }
 
-    if (["Pale-RD", "Palé", "RD-Quiniela", "Pick 2", "Venezuela", "Single Action"].includes(gameMode)) {
-        // Simple logic for these modes usually, but now Combo is allowed for Pick 2 mixed
-        // If it's single action, box/combo should be 0 from UI, but safe to just add them here generally
-        // unless specific multiplier logic is needed.
-        // For Palé/Pick 2 with Combo, the combo amount usually multiplies by permutations.
-        
-        if (co > 0 && (gameMode === 'Pick 2' || gameMode === 'Palé' || gameMode === 'Pale-RD')) {
-             // Basic Combo calc for pairs if needed, usually 2 ways if not double.
-             // If calculateRowTotal is strictly cost, Combo cost = amount * permutations.
-             // For a mixed pair (12), perms is 2. For double (22), perms is 1 (but Doubles shouldn't have Combo per new rule).
-             // Assuming generic 2x cost for Pair Combos if mixed.
+    // --- PALÉ COMBO LOGIC (Dynamic based on digits) ---
+    if (["Pale-RD", "Palé"].includes(gameMode)) {
+        let comboCost = 0;
+        if (co > 0) {
+             const multiplier = calculatePaleCombinations(betNumber);
+             comboCost = co * multiplier;
+        }
+        return st + bx + comboCost;
+    }
+
+    if (["RD-Quiniela", "Pick 2", "Venezuela"].includes(gameMode)) {
+        // Combo Logic for Pairs (Pick 2, etc.)
+        let comboCost = 0;
+        if (co > 0) {
              const isDouble = isRepetitiveNumber(betNumber);
-             const comboMultiplier = isDouble ? 1 : 2; // Though doubles shouldn't have combo.
-             return st + bx + (co * comboMultiplier);
+             const comboMultiplier = isDouble ? 1 : 2;
+             comboCost = co * comboMultiplier;
         }
         
-        return st + bx;
+        return st + bx + comboCost;
+    }
+    
+    // Single Action Standard (1 digit)
+    if (gameMode === "Single Action") {
+        // Typically only Straight applies
+        return st;
     }
     
     if (gameMode === "Win 4" || gameMode === "Pick 3") {

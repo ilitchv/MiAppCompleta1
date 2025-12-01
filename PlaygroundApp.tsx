@@ -23,12 +23,43 @@ interface PlaygroundAppProps {
     language: 'en' | 'es' | 'ht';
 }
 
+// Storage Keys
+const STORAGE_KEYS = {
+    PLAYS: 'br_plays_state',
+    TRACKS: 'br_tracks_state',
+    DATES: 'br_dates_state',
+    PULITO: 'br_pulito_state'
+};
+
 const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
-    // State
-    const [plays, setPlays] = useState<Play[]>([]);
-    const [selectedTracks, setSelectedTracks] = useState<string[]>([]);
-    const [selectedDates, setSelectedDates] = useState<string[]>([getTodayDateString()]);
-    const [pulitoPositions, setPulitoPositions] = useState<number[]>([]);
+    // --- STATE INITIALIZATION WITH PERSISTENCE ---
+    const [plays, setPlays] = useState<Play[]>(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEYS.PLAYS);
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) { return []; }
+    });
+
+    const [selectedTracks, setSelectedTracks] = useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEYS.TRACKS);
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) { return []; }
+    });
+
+    const [selectedDates, setSelectedDates] = useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEYS.DATES);
+            return saved ? JSON.parse(saved) : [getTodayDateString()];
+        } catch (e) { return [getTodayDateString()]; }
+    });
+
+    const [pulitoPositions, setPulitoPositions] = useState<number[]>(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEYS.PULITO);
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) { return []; }
+    });
     
     const [selectedPlayIds, setSelectedPlayIds] = useState<number[]>([]);
     const [lastAddedPlayId, setLastAddedPlayId] = useState<number | null>(null);
@@ -68,6 +99,29 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
         }
     }, [theme]);
 
+    // --- PERSISTENCE EFFECTS ---
+    useEffect(() => { localStorage.setItem(STORAGE_KEYS.PLAYS, JSON.stringify(plays)); }, [plays]);
+    useEffect(() => { localStorage.setItem(STORAGE_KEYS.TRACKS, JSON.stringify(selectedTracks)); }, [selectedTracks]);
+    useEffect(() => { localStorage.setItem(STORAGE_KEYS.DATES, JSON.stringify(selectedDates)); }, [selectedDates]);
+    useEffect(() => { localStorage.setItem(STORAGE_KEYS.PULITO, JSON.stringify(pulitoPositions)); }, [pulitoPositions]);
+
+    // --- REACTIVE GAME MODE UPDATE ---
+    // This ensures if user selects 'Pulito' track, existing 'Pick 2' plays update automatically
+    useEffect(() => {
+        setPlays(currentPlays => {
+            let hasChanges = false;
+            const updatedPlays = currentPlays.map(p => {
+                const newMode = determineGameMode(p.betNumber, selectedTracks, pulitoPositions);
+                if (newMode !== '-' && newMode !== p.gameMode) {
+                    hasChanges = true;
+                    return { ...p, gameMode: newMode };
+                }
+                return p;
+            });
+            return hasChanges ? updatedPlays : currentPlays;
+        });
+    }, [selectedTracks, pulitoPositions]);
+
     const addPlayButtonRef = useRef<HTMLButtonElement>(null);
 
     // Initial Server Health Check
@@ -106,6 +160,7 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
     };
 
     const handleReset = () => {
+        // Clear State
         setPlays([]);
         setSelectedTracks([]);
         setPulitoPositions([]);
@@ -119,6 +174,12 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
         setLastSaveStatus(null);
         setValidationErrors([]);
         setIsValidationErrorOpen(false);
+
+        // Clear Storage
+        localStorage.removeItem(STORAGE_KEYS.PLAYS);
+        localStorage.removeItem(STORAGE_KEYS.TRACKS);
+        localStorage.removeItem(STORAGE_KEYS.DATES);
+        localStorage.removeItem(STORAGE_KEYS.PULITO);
     };
 
     const updatePlay = (id: number, updatedPlay: Partial<Play>) => {
@@ -204,10 +265,9 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
             calculateRowTotal(p.betNumber, p.gameMode, p.straightAmount, p.boxAmount, p.comboAmount) > 0
         );
         
-        // Single Action & Pulito Validation (CRITICAL)
+        // Validation Checks
         plays.forEach((p, idx) => {
             // 1. Single Action Generic Check
-            // If the game mode is specifically "Single Action" without position suffix, it means no positions were selected/mapped.
             if (p.gameMode === 'Single Action') {
                 errors.push(`Play #${idx + 1}: Single Action requires specific positions. Select 'Pulito' and at least one position (1-7).`);
             }
@@ -218,6 +278,11 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
                 if (invalidPositions.length > 0) {
                     errors.push(`Play #${idx + 1}: 2-digit plays (Pulito) are restricted to positions 1-4.`);
                 }
+            }
+
+            // 3. Block "Pick 2" temporary mode
+            if (p.gameMode === 'Pick 2') {
+                errors.push(`Play #${idx + 1}: "Pick 2" is a temporary mode. Please select 'Venezuela' or 'Pulito' track to define the specific game type.`);
             }
         });
         
@@ -285,29 +350,17 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
             
             <main className="flex-grow p-2 sm:p-4 overflow-y-auto space-y-4 max-w-7xl mx-auto w-full">
                 
-                {/* DatePicker moved to top as requested */}
+                {/* DatePicker */}
                 <DatePicker selectedDates={selectedDates} onDatesChange={setSelectedDates} />
 
-                {/* Top Section: Tracks & Total */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                    <div className="lg:col-span-8">
-                        <TrackSelector 
-                            selectedTracks={selectedTracks} 
-                            onSelectionChange={setSelectedTracks} 
-                            selectedDates={selectedDates}
-                            pulitoPositions={pulitoPositions}
-                            onPulitoPositionsChange={setPulitoPositions}
-                        />
-                    </div>
-                    <div className="lg:col-span-4 space-y-4">
-                        <TotalDisplay 
-                            baseTotal={baseTotal} 
-                            trackMultiplier={trackMultiplier} 
-                            dateMultiplier={selectedDates.length} 
-                            grandTotal={grandTotal} 
-                        />
-                    </div>
-                </div>
+                {/* Tracks */}
+                <TrackSelector 
+                    selectedTracks={selectedTracks} 
+                    onSelectionChange={setSelectedTracks} 
+                    selectedDates={selectedDates}
+                    pulitoPositions={pulitoPositions}
+                    onPulitoPositionsChange={setPulitoPositions}
+                />
 
                 {/* Actions */}
                 <ActionsPanel 
@@ -325,7 +378,7 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
                     addPlayButtonRef={addPlayButtonRef}
                 />
 
-                {/* UTILITIES ROW (Restored) */}
+                {/* UTILITIES ROW */}
                 <div className="flex justify-between items-center px-1 py-1 bg-light-surface/50 dark:bg-dark-surface/50 rounded-lg border border-gray-200 dark:border-gray-800">
                     <div className="flex gap-2">
                         <button
@@ -369,6 +422,15 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
                     selectedTracks={selectedTracks}
                     pulitoPositions={pulitoPositions}
                 />
+
+                {/* Total Display - MOVED HERE (Restored Position) */}
+                <TotalDisplay 
+                    baseTotal={baseTotal} 
+                    trackMultiplier={trackMultiplier} 
+                    dateMultiplier={selectedDates.length} 
+                    grandTotal={grandTotal} 
+                />
+
             </main>
 
             {/* Modals */}

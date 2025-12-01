@@ -78,6 +78,9 @@ export const RESULTS_CATALOG: CatalogItem[] = [
     { id:'special/bk-paper/AM', section:'special', lottery:'BK Paper', draw:'AM', drawTime:'11:30', closeTime:'11:10', days:[0,1,2,3,4,5,6], visible:true },
     { id:'special/bk-paper/PM', section:'special', lottery:'BK Paper', draw:'PM', drawTime:'21:30', closeTime:'21:10', days:[0,1,2,3,4,5,6], visible:true },
     { id:'special/357/Main', section:'special', lottery:'3-5-7', draw:'Main', drawTime:'20:30', closeTime:'20:10', days:[0,1,2,3,4,5,6], visible:true },
+    // ADDED: Explicit entries for Pulito and Venezuela to allow Admin Result Management
+    { id:'special/pulito', section:'special', lottery:'Pulito', draw:'Diario', drawTime:'23:59', closeTime:'23:50', days:[0,1,2,3,4,5,6], visible:true },
+    { id:'special/venezuela', section:'special', lottery:'Venezuela', draw:'Diario', drawTime:'23:59', closeTime:'23:50', days:[0,1,2,3,4,5,6], visible:true },
 ];
 
 export const TRACK_CATEGORIES: TrackCategory[] = [

@@ -3,24 +3,23 @@
 
 ## Estado Actual de las Características
 
-### Completado (v3.5 - Beast Office Stable)
+### Completado (v4.0 - Ticolepe Stable)
 
--   [x] **Núcleo del Playground:** Estructura base, gestión de jugadas, cálculos.
--   [x] **Unificación de Datos:** `RESULTS_CATALOG` como fuente única de verdad.
--   [x] **Identidad Visual:** Logos SVG vectoriales integrados.
--   [x] **Admin Dashboard ("Beast Office"):**
-    -   [x] **UI Premium:** Diseño industrial, toggles de cápsula, tipografía técnica.
-    -   [x] **Sales Panel:** Vista dual (Tickets/Plays), QR Scanner.
-    -   [x] **Results Panel:** Gestión CRUD completa, Historial.
-    -   [x] **Payouts Panel:** Calculadora manual, Configuración de reglas, Simulador de ganadores.
-    -   [x] **OCR Panel (Avanzado):**
-        -   [x] Motor Híbrido (Local Tesseract + Cloud AI).
-        -   [x] Scroll infinito (corrección de layout).
-        -   [x] Batch Save con validación.
--   [x] **Lógica de Negocio:**
-    -   [x] Mapeo inteligente de "Jerga de Banca" (State, Horses, etc.).
-    -   [x] Soporte de longitud variable para Horses.
--   [x] **Persistencia Local (LocalDB):** Servicio robusto.
+-   [x] **Core Playground:**
+    -   [x] Restored `TotalDisplay` position.
+    -   [x] Implemented robust `localStorage` persistence.
+    -   [x] Reactive Game Mode detection (Pulito/Venezuela toggle).
+    -   [x] Restored 2-step Ticket Modal flow (Preview/Receipt).
+-   [x] **Math Engine (`prizeCalculator`):**
+    -   [x] **Dynamic Palé Combos:** Correct math (4x, 2x, 1x) based on digit repetition.
+    -   [x] **Position Derivation:** Auto-extract 1st/2nd/3rd from USA P3/P4.
+    -   [x] **Business Rules:** Explicit block for "Venezuela on Horses".
+    -   [x] **Normalization:** Whitespace trimming and mode string cleaning.
+-   [x] **Admin Dashboard:**
+    -   [x] **Consolidated Lists:** Grouped plays by Ticket (no track duplication).
+    -   [x] **Unified Calculation:** Removed `isCompatible` guard. All plays calculate against all results.
+    -   [x] **Admin Ticket Viewer:** Dual-pane layout (Visual + Data) with live winning calculation.
+    -   [x] **Result Mapping:** Full map support for all tracks (USA New, SD, Special).
 
 ### En Progreso / Wishlist
 

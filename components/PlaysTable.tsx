@@ -152,7 +152,7 @@ const PlaysTable: React.FC<PlaysTableProps> = ({
         isDisabled = isSingleAction || isRepetitive;
     } else if (field === 'comboAmount') {
         // Combo disabled for Single Action OR Repetitive Numbers
-        // Note: This IMPLICITLY enables Combo for all other plays (Pick 2 mixed, Palé, etc.)
+        // (Allowed for Mixed Pairs e.g. 12, disabled for 22)
         isDisabled = isSingleAction || isRepetitive;
     }
 
