@@ -1195,6 +1195,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                                     />
                                                 </th>
                                                 <th className="p-3">Ticket</th>
+                                                <th className="p-3">Player</th>
                                                 <th className="p-3">Date</th>
                                                 <th className="p-3">Tracks</th>
                                                 <th className="p-3">Bet Number</th>
@@ -1219,6 +1220,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                                         )}
                                                     </td>
                                                     <td className="p-3 font-mono text-neon-cyan">{play.parentTicketNumber}</td>
+                                                    <td className="p-3">
+                                                        {users.find(u => u.id === play.userId) ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <img src={users.find(u => u.id === play.userId)?.avatarUrl} alt="" className="w-5 h-5 rounded-full" />
+                                                                <span className="text-white text-xs font-bold">{users.find(u => u.id === play.userId)?.name}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-500 italic">Guest</span>
+                                                        )}
+                                                    </td>
                                                     <td className="p-3 font-bold text-white">{play.targetDate}</td>
                                                     <td className="p-3 max-w-[200px] truncate font-bold text-slate-300" title={play.targetTrack}>
                                                         {play.targetTrack}

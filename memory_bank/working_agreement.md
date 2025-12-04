@@ -13,7 +13,11 @@ Este documento es nuestra fuente de verdad sobre cómo colaboramos. Su propósit
 
 ## Lecciones Aprendidas (Lessons Learned)
 
--   **Lección #11 (CRÍTICA - 2024-05):** **Riesgo de Reescritura Completa.**
+-   **Lección #12 (CRÍTICA - AdminDashboard Failure):** **Prohibición de Reescritura Ciega.**
+    -   **Error:** Al modificar `AdminDashboard.tsx` para agregar una columna, se regeneró el archivo completo usando una plantilla de memoria antigua, borrando el trabajo previo del usuario.
+    -   **Acción Correctiva:** Para cambios pequeños en archivos grandes, usar parches específicos o asegurar que se tiene la versión EXACTA del usuario antes de emitir el archivo completo. Si hay duda, pedir el archivo primero.
+
+-   **Lección #11 (CRÍTICA - PlaygroundApp Failure):** **Riesgo de Reescritura Completa.**
     -   **Error:** Al intentar agregar una pequeña lógica de validación, reescribí un componente completo (`PlaygroundApp.tsx`) usando una versión desactualizada de su estructura visual en mi memoria, rompiendo la UI (Layout, Botones).
     -   **Acción Correctiva:** Para archivos grandes y complejos de UI, **NUNCA** reescribir el archivo entero si solo se necesita cambiar una función lógica. Usar ediciones quirúrgicas o solicitar el contenido más reciente del archivo antes de tocarlo. Si debo reescribir, debo asegurarme de mapear 1:1 cada elemento visual existente.
 
