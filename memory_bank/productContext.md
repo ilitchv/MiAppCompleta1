@@ -31,3 +31,15 @@ Los métodos tradicionales para tomar y gestionar apuestas de lotería son manua
     -   Genera tickets digitales (PNG/PDF) con QR único y diseño de alta fidelidad.
 
 El objetivo es que el usuario sienta que tiene una **terminal profesional de alta velocidad** en su bolsillo.
+
+## Reglas de Negocio Específicas
+
+### Distinción Track vs Modo de Juego
+Es crucial diferenciar entre una Lotería (Track) y un Modificador (Mode) para la visualización correcta en el ticket.
+
+-   **TRACKS (Loterías Reales):** Deben aparecer explícitamente en el ticket.
+    -   New York, Florida, Georgia, etc.
+    -   **New York Horses:** Es un track legítimo (Carreras). Soporta apuestas numéricas (Pick 3, Win 4) y Single Action. **NO** soporta la modalidad "Venezuela".
+-   **MODES (Modificadores):** Son "meta-tracks" que alteran la lógica de juego, no el sorteo en sí. **NO** deben aparecer en la lista de tracks del ticket.
+    -   **Venezuela:** Modifica el pago (paga por posiciones derivadas 1ra/2da/3ra).
+    -   **Pulito:** Modifica la posición específica de la apuesta (Pos 1-4).

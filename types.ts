@@ -6,6 +6,7 @@ export interface Play {
   straightAmount: number | null;
   boxAmount: number | null;
   comboAmount: number | null;
+  paymentStatus?: 'pending' | 'paid' | 'unpaid'; // NEW: Track payment status per play
 }
 
 export interface WizardPlay {
@@ -86,10 +87,11 @@ export interface WinningResult {
 export interface AuditLogEntry {
     id: string;
     timestamp: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE';
-    targetId: string; // The ID of the result affected
-    details: string; // Description like "Changed 1st from 20 to 25" or "Deleted result"
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'FINANCE' | 'PAYOUT' | 'USER_CREATE' | 'USER_UPDATE' | 'USER_DELETE';
+    targetId: string; // The ID of the result/user affected
+    details: string; // Description
     user: string; // Usually 'Admin'
+    amount?: number; // Optional financial amount
 }
 
 export type ServerHealth = 'checking' | 'offline' | 'db_error' | 'online';
@@ -105,6 +107,7 @@ export interface TicketData {
     ticketImage?: string; 
     syncStatus?: 'local' | 'synced' | 'failed';
     savedAt?: string;
+    userId?: string; // NEW: Link ticket to user
 }
 
 // --- PRIZE CALCULATOR TYPES ---
@@ -136,4 +139,21 @@ export interface CatalogItem {
     closeTime: string;
     days: number[];
     visible: boolean;
+}
+
+// --- USER MANAGEMENT ---
+export interface User {
+    id: string;
+    email: string;
+    password?: string; // Only used for mock auth/reset
+    name: string;
+    role: 'admin' | 'user';
+    status: 'active' | 'suspended';
+    balance: number;
+    pendingBalance: number;
+    phone?: string;
+    address?: string;
+    notes?: string;
+    createdAt: string;
+    avatarUrl?: string;
 }

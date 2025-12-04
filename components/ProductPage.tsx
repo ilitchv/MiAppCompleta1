@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { translations } from '../constants/translations';
 import ThemeToggle from './ThemeToggle';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ProductPageProps {
     onOpenPlayground: () => void;
@@ -14,7 +15,14 @@ interface ProductPageProps {
 
 const ProductPage: React.FC<ProductPageProps> = ({ onOpenPlayground, onBack, language, setLanguage, theme, toggleTheme }) => {
     const t = translations[language];
+    const { login, isAuthenticated } = useAuth();
+    
+    // Login State
+    const [email, setEmail] = useState('user@demo.com');
+    const [password, setPassword] = useState('');
     const [rememberMe, setRememberMe] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
 
     useEffect(() => {
         const yearSpan = document.getElementById('prod-year');
@@ -27,12 +35,31 @@ const ProductPage: React.FC<ProductPageProps> = ({ onOpenPlayground, onBack, lan
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
     }
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (rememberMe) {
-            localStorage.setItem('beastReaderAutoLogin', 'true');
+        setError('');
+        setIsLoading(true);
+        
+        try {
+            const success = await login(email, password);
+            if (!success) {
+                setError("Invalid credentials. Try user@demo.com / 123456");
+            }
+            // If success, the MainApp useEffect will detect auth change and redirect to Dashboard
+        } catch (err) {
+            setError("Login failed");
+        } finally {
+            setIsLoading(false);
         }
-        onOpenPlayground();
+    };
+
+    const handleEnterPlaygroundClick = () => {
+        if (isAuthenticated) {
+            onOpenPlayground();
+        } else {
+            // Iron Gate: Scroll to login section
+            scrollTo('login-section');
+        }
     };
 
     return (
@@ -93,7 +120,7 @@ const ProductPage: React.FC<ProductPageProps> = ({ onOpenPlayground, onBack, lan
                         </div>
                         
                         <div className="flex flex-wrap gap-4 pt-4">
-                            <button onClick={onOpenPlayground} className="px-8 py-4 rounded-full bg-gradient-to-r from-neon-cyan to-neon-pink text-black font-bold text-lg shadow-lg shadow-neon-cyan/20 hover:shadow-neon-cyan/40 hover:-translate-y-1 transition-all duration-300 transform">
+                            <button onClick={handleEnterPlaygroundClick} className="px-8 py-4 rounded-full bg-gradient-to-r from-neon-cyan to-neon-pink text-black font-bold text-lg shadow-lg shadow-neon-cyan/20 hover:shadow-neon-cyan/40 hover:-translate-y-1 transition-all duration-300 transform">
                                 {t.prodCtaEnter}
                             </button>
                             <button onClick={() => scrollTo('how')} className="px-6 py-4 rounded-full text-gray-600 dark:text-gray-400 hover:text-black dark:hover:text-white font-medium underline decoration-dotted underline-offset-4 transition-colors">
@@ -264,8 +291,8 @@ const ProductPage: React.FC<ProductPageProps> = ({ onOpenPlayground, onBack, lan
                 </div>
             </section>
 
-            {/* PRICING / LOGIN */}
-            <section className="py-24 px-4">
+            {/* PRICING / LOGIN SECTION WITH ID FOR SCROLLING */}
+            <section className="py-24 px-4" id="login-section">
                  <div className="max-w-md mx-auto text-center">
                     <span className="inline-block py-1 px-3 rounded-full bg-neon-pink/10 text-neon-pink text-xs font-bold mb-4">{t.prodBadgeBeta}</span>
                     <h2 className="text-4xl font-bold mb-2">{t.pricingTitle}</h2>
@@ -277,11 +304,21 @@ const ProductPage: React.FC<ProductPageProps> = ({ onOpenPlayground, onBack, lan
                         <form onSubmit={handleLogin} className="space-y-4">
                             <div className="text-left">
                                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">{t.labelEmail}</label>
-                                <input type="email" className="w-full bg-gray-50 dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg p-3 focus:border-neon-cyan outline-none transition-colors" placeholder="user@demo.com" />
+                                <input 
+                                    type="email" 
+                                    className="w-full bg-gray-50 dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg p-3 focus:border-neon-cyan outline-none transition-colors" 
+                                    value={email}
+                                    onChange={e => setEmail(e.target.value)}
+                                />
                             </div>
                             <div className="text-left">
                                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">{t.labelPass}</label>
-                                <input type="password" className="w-full bg-gray-50 dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg p-3 focus:border-neon-cyan outline-none transition-colors" placeholder="••••••••" />
+                                <input 
+                                    type="password" 
+                                    className="w-full bg-gray-50 dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg p-3 focus:border-neon-cyan outline-none transition-colors" 
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                />
                             </div>
                             
                             {/* CHECKBOX ADDED */}
@@ -296,8 +333,10 @@ const ProductPage: React.FC<ProductPageProps> = ({ onOpenPlayground, onBack, lan
                                 <label htmlFor="rememberMe" className="text-sm text-gray-600 dark:text-gray-300 cursor-pointer">{t.labelRemember}</label>
                             </div>
 
-                            <button type="submit" className="w-full py-4 mt-2 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-pink text-black font-bold text-lg shadow-lg hover:scale-[1.02] transition-transform">
-                                {t.btnSignIn}
+                            {error && <p className="text-red-500 text-xs font-bold">{error}</p>}
+
+                            <button type="submit" disabled={isLoading} className="w-full py-4 mt-2 rounded-xl bg-gradient-to-r from-neon-cyan to-neon-pink text-black font-bold text-lg shadow-lg hover:scale-[1.02] transition-transform disabled:opacity-50">
+                                {isLoading ? 'Verifying...' : t.btnSignIn}
                             </button>
                         </form>
                         <p className="text-[10px] text-gray-400 mt-6">{t.loginFooter}</p>

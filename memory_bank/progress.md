@@ -3,30 +3,32 @@
 
 ## Estado Actual de las Características
 
-### Completado (v4.0 - Ticolepe Stable)
+### Completado (v5.3 - Admin Power-Up)
 
--   [x] **Core Playground:**
-    -   [x] Restored `TotalDisplay` position.
-    -   [x] Implemented robust `localStorage` persistence.
-    -   [x] Reactive Game Mode detection (Pulito/Venezuela toggle).
-    -   [x] Restored 2-step Ticket Modal flow (Preview/Receipt).
--   [x] **Math Engine (`prizeCalculator`):**
-    -   [x] **Dynamic Palé Combos:** Correct math (4x, 2x, 1x) based on digit repetition.
-    -   [x] **Position Derivation:** Auto-extract 1st/2nd/3rd from USA P3/P4.
-    -   [x] **Business Rules:** Explicit block for "Venezuela on Horses".
-    -   [x] **Normalization:** Whitespace trimming and mode string cleaning.
 -   [x] **Admin Dashboard:**
-    -   [x] **Consolidated Lists:** Grouped plays by Ticket (no track duplication).
-    -   [x] **Unified Calculation:** Removed `isCompatible` guard. All plays calculate against all results.
-    -   [x] **Admin Ticket Viewer:** Dual-pane layout (Visual + Data) with live winning calculation.
-    -   [x] **Result Mapping:** Full map support for all tracks (USA New, SD, Special).
+    -   [x] **Audit Hub:** Pestaña dedicada con filtros y logs detallados.
+    -   [x] **Identidad:** Mostrar Avatar/Nombre en Ventas.
+    -   [x] **Pagos:** Checkbox "Select All" para pagos masivos.
+    -   [x] **Logs Usuarios:** Auditoría de cambios en perfiles.
+-   [x] **User Dashboard:** Diseño Grid, Auth Mock, Historial, Playback.
+-   [x] **Playground UI:** Layout estable.
+-   [x] **Seguridad:** Iron Gate y Privacidad.
 
-### En Progreso / Wishlist
+### En Cola de Desarrollo (Pendientes Reales)
 
--   [ ] **Planificación de Wishlist del Usuario.**
--   [ ] **Módulo de Pagos:** Integración con pasarelas.
--   [ ] **Cuentas de Usuario:** Persistencia en la nube.
+-   [ ] **Sistema de Referidos (Jerarquía)**
+    -   [ ] Agregar `sponsorId` a User Schema.
+    -   [ ] UI: Asignar Sponsor en Admin.
+    -   [ ] UI: Visualizar Árbol Real en User Dashboard.
+-   [ ] **Beast Ledger (Economía Segura)**
+    -   [ ] Diseño de Hash/Token Schema.
+    -   [ ] Lógica "The Mint" (Creación Génesis).
+    -   [ ] Lógica "Chain" (Herencia de Hash).
+    -   [ ] Admin: Visualizador de Trazabilidad.
+-   [ ] **Reglas de Negocio**
+    -   [ ] Validación: Bloquear Horses + Venezuela.
 
 ## Problemas Conocidos
 
--   **Reconocimiento de Voz (iOS):** Limitaciones conocidas con el idioma 'ht' en Safari.
+1.  **Riesgo de Regresión:** `PlaygroundApp.tsx` es un componente monolítico y frágil. Modificarlo requiere extremo cuidado con el JSX.
+2.  **Persistencia Local:** Al limpiar la caché del navegador, se pierden los logs de auditoría locales.

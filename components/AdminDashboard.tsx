@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TicketData, WinningResult, PrizeTable, CalculationResult, AuditLogEntry, Play } from '../types';
+import { TicketData, WinningResult, PrizeTable, CalculationResult, AuditLogEntry, Play, User } from '../types';
 import { localDbService } from '../services/localDbService';
 import { DEFAULT_PRIZE_TABLE, GAME_RULES_TEXT, RESULTS_CATALOG } from '../constants';
 import { calculateWinnings } from '../utils/prizeCalculator';
@@ -9,6 +9,7 @@ import { interpretWinningResultsImage, interpretWinningResultsText } from '../se
 import { processLocalOcr } from '../services/localOcrService';
 import { useSound } from '../hooks/useSound';
 import TicketModal from './TicketModal';
+import WalletManagerModal from './WalletManagerModal';
 
 // Declare jsQR from global scope
 declare var jsQR: any;
@@ -88,7 +89,7 @@ const TRACK_MAP: Record<string, string> = {
 };
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
-    const [activeTab, setActiveTab] = useState<'sales' | 'results' | 'ocr' | 'payouts' | 'winners'>('sales');
+    const [activeTab, setActiveTab] = useState<'sales' | 'results' | 'ocr' | 'payouts' | 'winners' | 'users' | 'audit'>('sales');
     const [salesViewMode, setSalesViewMode] = useState<'tickets' | 'plays'>('tickets'); 
     const { playSound } = useSound();
     
@@ -102,6 +103,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     });
     const [selectedTicket, setSelectedTicket] = useState<TicketData | null>(null);
     const [isLoadingTickets, setIsLoadingTickets] = useState(false);
+    
+    // CLAIMS PROCESSING STATE (Sales > Plays)
+    // Key format: "ticketNumber_playIndex"
+    const [selectedClaimKeys, setSelectedClaimKeys] = useState<Set<string>>(new Set());
 
     // SCANNER STATE
     const [isScanning, setIsScanning] = useState(false);
@@ -124,8 +129,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [resultToDelete, setResultToDelete] = useState<string | null>(null);
     const [deletePin, setDeletePin] = useState('');
-    const [isAuditLogOpen, setIsAuditLogOpen] = useState(false);
     const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+    const [auditFilter, setAuditFilter] = useState<'ALL' | 'FINANCE' | 'RESULTS' | 'USERS'>('ALL');
 
     // OCR STATE
     const [ocrImage, setOcrImage] = useState<string | null>(null);
@@ -136,6 +141,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     const ocrFileInputRef = useRef<HTMLInputElement>(null);
     const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
     const [successCount, setSuccessCount] = useState(0);
+
+    // USER MANAGEMENT STATE
+    const [users, setUsers] = useState<User[]>([]);
+    const [userSearch, setUserSearch] = useState('');
+    const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [newUserForm, setNewUserForm] = useState<Partial<User>>({});
+    
+    // WALLET MANAGER STATE
+    const [isWalletOpen, setIsWalletOpen] = useState(false);
+    const [selectedUserForWallet, setSelectedUserForWallet] = useState<User | null>(null);
 
     // PAYOUTS STATE
     const [prizeTable, setPrizeTable] = useState<PrizeTable>(DEFAULT_PRIZE_TABLE);
@@ -180,35 +196,42 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
         setResults(resultData);
     };
 
+    const loadUsersFromDb = () => {
+        const userData = localDbService.getUsers();
+        setUsers(userData);
+    };
+
+    const loadAuditLog = () => {
+        const logs = localDbService.getAuditLog();
+        setAuditLog(logs);
+    };
+
+    const reloadTickets = () => {
+        const localTickets = localDbService.getTickets();
+        localTickets.sort((a, b) => new Date(b.transactionDateTime).getTime() - new Date(a.transactionDateTime).getTime());
+        setTickets(localTickets);
+    };
+
     useEffect(() => {
         const fetchAllData = async () => {
             setIsLoadingTickets(true);
-            
-            const localTickets = localDbService.getTickets();
-            localTickets.sort((a, b) => new Date(b.transactionDateTime).getTime() - new Date(a.transactionDateTime).getTime());
-            setTickets(localTickets);
-            setFilteredTickets(localTickets);
-
-            try {
-                const res = await fetch('/api/tickets');
-                if (res.ok) {
-                    const remoteTickets: TicketData[] = await res.json();
-                    remoteTickets.sort((a, b) => new Date(b.transactionDateTime).getTime() - new Date(a.transactionDateTime).getTime());
-                    setTickets(remoteTickets);
-                    setFilteredTickets(remoteTickets);
-                }
-            } catch (error) {
-                console.warn("Admin Dashboard offline: showing local data only.");
-            } finally {
-                setIsLoadingTickets(false);
-            }
-
+            reloadTickets();
             loadResultsFromDb();
+            loadUsersFromDb();
+            loadAuditLog();
             setPrizeTable(localDbService.getPrizeTable());
+            setIsLoadingTickets(false);
         };
 
         fetchAllData();
     }, []);
+
+    // Refresh Audit Log when tab is selected
+    useEffect(() => {
+        if (activeTab === 'audit') {
+            loadAuditLog();
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         let res = tickets;
@@ -252,24 +275,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     // --- CONSOLIDATED PLAYS VIEW ---
     const flattenedPlays = useMemo(() => {
         return filteredTickets.flatMap(t => {
-            return t.plays.map(play => {
+            return t.plays.map((play, index) => {
                 let totalWon = 0;
                 let isWinner = false;
                 let isPending = false;
                 
-                // Collect matching tracks for display
                 const winningTracks: string[] = [];
 
                 t.tracks.forEach(track => {
-                    // Logic: Now delegated to prizeCalculator. 
-                    // We attempt to calculate for EVERY track.
-                    
                     let trackWin = 0;
                     let trackPending = false;
 
                     t.betDates.forEach(date => {
                         const resultId = TRACK_MAP[track];
-                        // Smart Lookup: ID Match OR Name Match (for custom tracks)
                         const result = results.find(r => (r.lotteryId === resultId || r.lotteryName === track) && r.date === date);
 
                         if (result) {
@@ -306,26 +324,101 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     bg = 'bg-red-500/20';
                 }
 
-                // If winner, show only winning tracks. If pending/loser, show all tracks.
+                // Payment Status from Data
+                const isPaid = play.paymentStatus === 'paid';
+                const key = `${t.ticketNumber}_${index}`;
+
                 const displayTracks = isWinner 
                     ? winningTracks.join(', ') 
                     : t.tracks.join(', ');
 
                 return {
                     ...play,
+                    uniqueKey: key,
+                    playIndex: index,
+                    userId: t.userId, // Needed for payment credit
                     parentTicketNumber: t.ticketNumber,
                     parentTransactionDate: t.transactionDateTime,
                     finalTimestamp: new Date(t.transactionDateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                    targetDate: t.betDates.join(', '), // Plural Dates
-                    targetTrack: displayTracks,        // Plural/Grouped Tracks
+                    targetDate: t.betDates.join(', '),
+                    targetTrack: displayTracks,
                     status,
                     color,
                     bg,
-                    amount: totalWon
+                    amount: totalWon,
+                    isPaid,
+                    canPay: isWinner && !isPaid
                 };
             });
         });
     }, [filteredTickets, results, prizeTable]);
+
+    // --- CLAIMS PROCESSING LOGIC ---
+    const toggleClaimSelection = (key: string) => {
+        const newSet = new Set(selectedClaimKeys);
+        if (newSet.has(key)) newSet.delete(key);
+        else newSet.add(key);
+        setSelectedClaimKeys(newSet);
+    };
+
+    const handleSelectAllClaims = () => {
+        const allPayable = flattenedPlays.filter(p => p.canPay);
+        
+        // If all currently visible & payable are selected, deselect them. Otherwise, select all.
+        const allKeys = allPayable.map(p => p.uniqueKey);
+        const allSelected = allKeys.every(k => selectedClaimKeys.has(k));
+
+        if (allSelected) {
+            setSelectedClaimKeys(new Set());
+        } else {
+            setSelectedClaimKeys(new Set(allKeys));
+        }
+    };
+
+    const handleProcessClaims = () => {
+        const claimsToPay = flattenedPlays.filter(p => selectedClaimKeys.has(p.uniqueKey) && p.canPay);
+        if (claimsToPay.length === 0) return;
+
+        // Group by User ID to batch payments
+        const userPayloads: Record<string, { amount: number, ticketUpdates: Record<string, number[]> }> = {};
+
+        claimsToPay.forEach(p => {
+            const uid = p.userId || 'u-12345';
+            if (!userPayloads[uid]) userPayloads[uid] = { amount: 0, ticketUpdates: {} };
+            
+            userPayloads[uid].amount += p.amount;
+            
+            if (!userPayloads[uid].ticketUpdates[p.parentTicketNumber]) {
+                userPayloads[uid].ticketUpdates[p.parentTicketNumber] = [];
+            }
+            userPayloads[uid].ticketUpdates[p.parentTicketNumber].push(p.playIndex);
+        });
+
+        // Execute transactions
+        Object.entries(userPayloads).forEach(([uid, payload]) => {
+            // 1. Credit User Balance
+            localDbService.updateUserBalance(
+                uid, 
+                payload.amount, 
+                'WIN', 
+                `Payout for ${Object.keys(payload.ticketUpdates).length} tickets`
+            );
+
+            // 2. Mark plays as Paid in Ticket DB
+            Object.entries(payload.ticketUpdates).forEach(([ticketNum, indices]) => {
+                localDbService.markPlaysAsPaid(ticketNum, indices);
+            });
+        });
+
+        playSound('add'); // Cash register sound
+        setSelectedClaimKeys(new Set()); // Clear selection
+        reloadTickets(); // Refresh view
+        loadUsersFromDb(); // Refresh balances
+    };
+
+    const totalClaimsAmount = flattenedPlays
+        .filter(p => selectedClaimKeys.has(p.uniqueKey))
+        .reduce((sum, p) => sum + p.amount, 0);
 
     const displayedResults = results.filter(r => {
         if (resultsDateRange.start && resultsDateRange.end) {
@@ -422,6 +515,80 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             integrityBreaches
         };
     }, [tickets, results, prizeTable]);
+
+    // --- USER MANAGEMENT LOGIC ---
+    const handleOpenUserModal = (user?: User) => {
+        if (user) {
+            setEditingUser(user);
+            setNewUserForm(user);
+        } else {
+            setEditingUser(null);
+            setNewUserForm({
+                role: 'user',
+                status: 'active',
+                balance: 0,
+                pendingBalance: 0
+            });
+        }
+        setIsUserModalOpen(true);
+    };
+
+    const handleSaveUser = (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        const userData: User = {
+            id: editingUser ? editingUser.id : `u-${Date.now()}`,
+            email: newUserForm.email || '',
+            name: newUserForm.name || 'New User',
+            role: newUserForm.role || 'user',
+            status: newUserForm.status || 'active',
+            balance: newUserForm.balance || 0,
+            pendingBalance: newUserForm.pendingBalance || 0,
+            phone: newUserForm.phone || '',
+            address: newUserForm.address || '',
+            notes: newUserForm.notes || '',
+            createdAt: editingUser ? editingUser.createdAt : new Date().toISOString(),
+            avatarUrl: editingUser ? editingUser.avatarUrl : `https://ui-avatars.com/api/?name=${encodeURIComponent(newUserForm.name || 'User')}&background=random&color=fff`,
+            password: newUserForm.password || editingUser?.password || '123456' // Mock Password
+        };
+
+        const success = localDbService.saveUser(userData);
+        if (success) {
+            loadUsersFromDb();
+            setIsUserModalOpen(false);
+            playSound('success');
+        } else {
+            alert("Error saving user.");
+        }
+    };
+
+    const handleDeleteUser = (userId: string) => {
+        if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+            if (localDbService.deleteUser(userId)) {
+                loadUsersFromDb();
+                playSound('delete');
+            }
+        }
+    };
+
+    const handleOpenWallet = (user: User) => {
+        setSelectedUserForWallet(user);
+        setIsWalletOpen(true);
+    };
+
+    const filteredUsers = users.filter(u => 
+        u.name.toLowerCase().includes(userSearch.toLowerCase()) || 
+        u.email.toLowerCase().includes(userSearch.toLowerCase())
+    );
+
+    // --- AUDIT FILTERING ---
+    const filteredAuditLog = auditLog.filter(log => {
+        if (auditFilter === 'ALL') return true;
+        if (auditFilter === 'FINANCE') return ['FINANCE', 'PAYOUT'].includes(log.action);
+        if (auditFilter === 'RESULTS') return ['CREATE', 'UPDATE', 'DELETE'].includes(log.action);
+        if (auditFilter === 'USERS') return ['USER_CREATE', 'USER_UPDATE', 'USER_DELETE'].includes(log.action);
+        return true;
+    });
 
     const parseRowValue = (val: string) => {
         const cleaned = val.replace(/-{2,}|x{2,}/gi, '').trim();
@@ -620,11 +787,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             setResultToDelete(null);
             playSound('delete');
         }
-    };
-
-    const handleOpenAuditLog = () => {
-        setAuditLog(localDbService.getAuditLog());
-        setIsAuditLogOpen(true);
     };
 
     const handleOcrFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -875,12 +1037,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </div>
                 </div>
                 
-                <div className="flex bg-slate-700 rounded-lg p-1">
-                    <button onClick={() => setActiveTab('sales')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'sales' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Sales</button>
-                    <button onClick={() => setActiveTab('results')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'results' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Results</button>
-                    <button onClick={() => setActiveTab('winners')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'winners' ? 'bg-neon-green text-black shadow' : 'text-gray-400 hover:text-white'}`}>Winners</button>
-                    <button onClick={() => setActiveTab('ocr')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'ocr' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>OCR</button>
-                    <button onClick={() => setActiveTab('payouts')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${activeTab === 'payouts' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Payouts</button>
+                <div className="flex bg-slate-700 rounded-lg p-1 overflow-x-auto max-w-[60vw]">
+                    <button onClick={() => setActiveTab('sales')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'sales' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Sales</button>
+                    <button onClick={() => setActiveTab('users')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Users</button>
+                    <button onClick={() => setActiveTab('results')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'results' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Results</button>
+                    <button onClick={() => setActiveTab('winners')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'winners' ? 'bg-neon-green text-black shadow' : 'text-gray-400 hover:text-white'}`}>Winners</button>
+                    <button onClick={() => setActiveTab('audit')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'audit' ? 'bg-purple-500 text-white shadow' : 'text-gray-400 hover:text-white'}`}>Audit</button>
+                    <button onClick={() => setActiveTab('ocr')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'ocr' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>OCR</button>
+                    <button onClick={() => setActiveTab('payouts')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'payouts' ? 'bg-neon-cyan text-black shadow' : 'text-gray-400 hover:text-white'}`}>Payouts</button>
                 </div>
 
                 <button onClick={onClose} className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded border border-red-500/30 transition-all text-sm font-bold">
@@ -954,6 +1118,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                             </div>
                         </div>
 
+                        {/* CLAIMS PROCESSING BAR (Only visible in Plays Mode with Selection) */}
+                        {salesViewMode === 'plays' && selectedClaimKeys.size > 0 && (
+                            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-[70] bg-black/90 border border-neon-cyan/50 shadow-[0_0_30px_rgba(0,255,255,0.3)] rounded-full px-6 py-3 flex items-center gap-4 animate-in slide-in-from-bottom-10 fade-in duration-300">
+                                <div className="text-white font-bold">
+                                    <span className="text-neon-cyan">{selectedClaimKeys.size}</span> Selected Wins
+                                </div>
+                                <div className="h-6 w-px bg-gray-700"></div>
+                                <div className="text-green-400 font-mono font-bold text-lg">
+                                    ${totalClaimsAmount.toFixed(2)}
+                                </div>
+                                <button 
+                                    onClick={handleProcessClaims}
+                                    className="ml-2 px-6 py-2 bg-neon-cyan hover:bg-cyan-400 text-black font-black rounded-full shadow-lg transition-all transform hover:scale-105"
+                                >
+                                    PAY OUT
+                                </button>
+                                <button 
+                                    onClick={() => setSelectedClaimKeys(new Set())}
+                                    className="text-gray-500 hover:text-white ml-2"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        )}
+
                         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
                             <div className="overflow-x-auto max-h-[600px]">
                                 {salesViewMode === 'tickets' ? (
@@ -962,60 +1151,94 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                             <tr>
                                                 <th className="p-4">Date</th>
                                                 <th className="p-4">Ticket #</th>
+                                                <th className="p-4">Player</th>
                                                 <th className="p-4">Tracks</th>
                                                 <th className="p-4 text-center">Plays</th>
                                                 <th className="p-4 text-right">Grand Total</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700">
-                                            {filteredTickets.map(ticket => (
-                                                <tr key={ticket.ticketNumber} onClick={() => setSelectedTicket(ticket)} className="hover:bg-slate-700/50 cursor-pointer transition-colors">
-                                                    <td className="p-4 text-white font-bold">{new Date(ticket.transactionDateTime).toLocaleString()}</td>
-                                                    <td className="p-4 font-mono text-neon-cyan">{ticket.ticketNumber}</td>
-                                                    <td className="p-4 max-w-xs truncate" title={ticket.tracks.join(', ')}>{ticket.tracks.length > 2 ? `${ticket.tracks[0]} +${ticket.tracks.length-1}` : ticket.tracks.join(', ')}</td>
-                                                    <td className="p-4 text-center">{ticket.plays.length}</td>
-                                                    <td className="p-4 text-right font-bold text-green-400">${ticket.grandTotal.toFixed(2)}</td>
-                                                </tr>
-                                            ))}
+                                            {filteredTickets.map(ticket => {
+                                                const ticketUser = users.find(u => u.id === ticket.userId);
+                                                return (
+                                                    <tr key={ticket.ticketNumber} onClick={() => setSelectedTicket(ticket)} className="hover:bg-slate-700/50 cursor-pointer transition-colors">
+                                                        <td className="p-4 text-white font-bold">{new Date(ticket.transactionDateTime).toLocaleString()}</td>
+                                                        <td className="p-4 font-mono text-neon-cyan">{ticket.ticketNumber}</td>
+                                                        <td className="p-4">
+                                                            {ticketUser ? (
+                                                                <div className="flex items-center gap-2">
+                                                                    <img src={ticketUser.avatarUrl} alt="" className="w-5 h-5 rounded-full" />
+                                                                    <span className="text-white text-xs font-bold">{ticketUser.name}</span>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-xs text-gray-500 italic">Guest / Walk-in</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 max-w-xs truncate" title={ticket.tracks.join(', ')}>{ticket.tracks.length > 2 ? `${ticket.tracks[0]} +${ticket.tracks.length-1}` : ticket.tracks.join(', ')}</td>
+                                                        <td className="p-4 text-center">{ticket.plays.length}</td>
+                                                        <td className="p-4 text-right font-bold text-green-400">${ticket.grandTotal.toFixed(2)}</td>
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 ) : (
                                     <table className="w-full text-xs text-left text-gray-300 whitespace-nowrap">
                                         <thead className="bg-slate-900/90 text-[10px] uppercase font-bold border-b border-slate-700 sticky top-0 z-10 text-gray-500">
                                             <tr>
+                                                <th className="p-3 text-center w-10">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        onChange={(e) => handleSelectAllClaims()}
+                                                        title="Select all visible UNPAID WINNERS"
+                                                        className="w-4 h-4 accent-neon-cyan cursor-pointer rounded opacity-50 hover:opacity-100" 
+                                                    />
+                                                </th>
                                                 <th className="p-3">Ticket</th>
                                                 <th className="p-3">Date</th>
-                                                <th className="p-3">Sold Time</th>
                                                 <th className="p-3">Tracks</th>
                                                 <th className="p-3">Bet Number</th>
                                                 <th className="p-3">Game Mode</th>
-                                                <th className="p-3 text-right">Str/Box/Com</th>
                                                 <th className="p-3 text-right">Cost</th>
                                                 <th className="p-3 text-center">Status</th>
+                                                <th className="p-3 text-center">Payment</th>
                                                 <th className="p-3 text-right">Won ($)</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-700 bg-slate-800">
                                             {flattenedPlays.map((play, idx) => (
-                                                <tr key={`${play.parentTicketNumber}_${idx}_play`} className="hover:bg-slate-700/30 transition-colors">
+                                                <tr key={play.uniqueKey} className={`transition-colors ${selectedClaimKeys.has(play.uniqueKey) ? 'bg-neon-cyan/10' : 'hover:bg-slate-700/30'}`}>
+                                                    <td className="p-3 text-center">
+                                                        {play.canPay && (
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={selectedClaimKeys.has(play.uniqueKey)}
+                                                                onChange={() => toggleClaimSelection(play.uniqueKey)}
+                                                                className="w-4 h-4 accent-neon-cyan cursor-pointer rounded" 
+                                                            />
+                                                        )}
+                                                    </td>
                                                     <td className="p-3 font-mono text-neon-cyan">{play.parentTicketNumber}</td>
                                                     <td className="p-3 font-bold text-white">{play.targetDate}</td>
-                                                    <td className="p-3 text-slate-400 font-mono text-[10px]">
-                                                        {play.finalTimestamp}
-                                                    </td>
                                                     <td className="p-3 max-w-[200px] truncate font-bold text-slate-300" title={play.targetTrack}>
                                                         {play.targetTrack}
                                                     </td>
                                                     <td className="p-3 font-bold font-mono text-white text-base">{play.betNumber}</td>
                                                     <td className="p-3 text-xs uppercase tracking-wider">{play.gameMode}</td>
-                                                    <td className="p-3 text-right font-mono text-[10px]">
-                                                        {play.straightAmount ? `$${play.straightAmount}` : '-'} / {play.boxAmount ? `$${play.boxAmount}` : '-'} / {play.comboAmount ? `$${play.comboAmount}` : '-'}
-                                                    </td>
                                                     <td className="p-3 text-right font-bold">${(play.totalAmount).toFixed(2)}</td>
                                                     <td className="p-3 text-center">
                                                         <span className={`px-2 py-0.5 rounded text-[9px] font-bold border border-current ${play.color} ${play.bg}`}>
                                                             {play.status}
                                                         </span>
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        {play.status === 'WINNER' && (
+                                                            play.isPaid ? (
+                                                                <span className="px-2 py-0.5 bg-green-500 text-black font-bold text-[9px] rounded uppercase">PAID</span>
+                                                            ) : (
+                                                                <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-500 border border-yellow-500 font-bold text-[9px] rounded uppercase animate-pulse">UNPAID</span>
+                                                            )
+                                                        )}
                                                     </td>
                                                     <td className={`p-3 text-right font-bold ${play.amount > 0 ? 'text-green-400' : 'text-gray-500'}`}>
                                                         ${play.amount.toFixed(2)}
@@ -1028,6 +1251,110 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                             </div>
                         </div>
                     </>
+                )}
+
+                {/* USERS TAB */}
+                {activeTab === 'users' && (
+                    <div className="space-y-6">
+                        {/* Users Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Total Users</p>
+                                <p className="text-3xl font-bold text-white">{users.length}</p>
+                            </div>
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Total Balance Held</p>
+                                <p className="text-3xl font-bold text-green-400">${users.reduce((acc, u) => acc + u.balance, 0).toLocaleString('en-US', {minimumFractionDigits: 2})}</p>
+                            </div>
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
+                                <p className="text-xs text-slate-400 uppercase font-bold mb-1">Active vs Suspended</p>
+                                <div className="flex gap-4">
+                                    <span className="text-2xl font-bold text-blue-400">{users.filter(u => u.status === 'active').length} <span className="text-xs text-slate-500 font-normal">Active</span></span>
+                                    <span className="text-2xl font-bold text-red-400">{users.filter(u => u.status === 'suspended').length} <span className="text-xs text-slate-500 font-normal">Suspended</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* User List Actions */}
+                        <div className="flex justify-between items-center bg-slate-800 p-4 rounded-xl border border-slate-700">
+                            <div className="flex gap-4 items-center w-full max-w-lg">
+                                <input 
+                                    type="text" 
+                                    placeholder="Search by name or email..." 
+                                    value={userSearch}
+                                    onChange={(e) => setUserSearch(e.target.value)}
+                                    className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm focus:border-neon-cyan outline-none flex-grow"
+                                />
+                            </div>
+                            <button 
+                                onClick={() => handleOpenUserModal()} 
+                                className="px-4 py-2 bg-gradient-to-r from-neon-cyan to-blue-600 text-black font-bold rounded-lg shadow-lg hover:brightness-110 flex items-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" x2="20" y1="8" y2="14"/><line x1="23" x2="17" y1="11" y2="11"/></svg>
+                                Create User
+                            </button>
+                        </div>
+
+                        {/* Users Table */}
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
+                            <table className="w-full text-sm text-left text-gray-300">
+                                <thead className="bg-slate-900/50 text-xs uppercase font-bold text-gray-500 border-b border-slate-700">
+                                    <tr>
+                                        <th className="p-4 w-16">User</th>
+                                        <th className="p-4">Name / Email</th>
+                                        <th className="p-4">Role</th>
+                                        <th className="p-4 text-right">Balance</th>
+                                        <th className="p-4 text-center">Status</th>
+                                        <th className="p-4 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-700">
+                                    {filteredUsers.map(u => (
+                                        <tr key={u.id} className="hover:bg-slate-700/50 transition-colors">
+                                            <td className="p-4">
+                                                <img src={u.avatarUrl} alt={u.name} className="w-10 h-10 rounded-full border border-slate-600" />
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="font-bold text-white">{u.name}</div>
+                                                <div className="text-xs text-slate-500">{u.email}</div>
+                                            </td>
+                                            <td className="p-4">
+                                                <span className={`text-xs font-bold uppercase px-2 py-1 rounded ${u.role === 'admin' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-700 text-slate-300'}`}>
+                                                    {u.role}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-right font-mono font-bold text-white">
+                                                ${u.balance.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                {u.status === 'active' ? (
+                                                    <span className="px-2 py-1 rounded bg-green-500/20 text-green-400 text-xs font-bold uppercase">Active</span>
+                                                ) : (
+                                                    <span className="px-2 py-1 rounded bg-red-500/20 text-red-400 text-xs font-bold uppercase">Suspended</span>
+                                                )}
+                                            </td>
+                                            <td className="p-4 text-right flex justify-end gap-2">
+                                                {/* WALLET BUTTON */}
+                                                <button onClick={() => handleOpenWallet(u)} className="p-2 bg-slate-700 hover:bg-green-600/20 hover:text-green-400 rounded text-slate-300" title="Manage Wallet">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+                                                </button>
+                                                
+                                                <button onClick={() => handleOpenUserModal(u)} className="p-2 bg-slate-700 hover:bg-slate-600 rounded text-blue-400" title="Edit User">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                                </button>
+                                                <button onClick={() => handleDeleteUser(u.id)} className="p-2 bg-slate-700 hover:bg-red-500/20 rounded text-red-500 hover:text-red-400" title="Delete User">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {filteredUsers.length === 0 && (
+                                        <tr><td colSpan={6} className="p-8 text-center text-slate-500">No users found.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 )}
 
                 {/* RESULTS TAB */}
@@ -1056,9 +1383,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                 <input type="text" placeholder="Filter by Name..." value={resultsSearch} onChange={e => setResultsSearch(e.target.value)} className="bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white outline-none focus:border-neon-cyan text-sm w-48" />
                             </div>
                             <div className="flex gap-3">
-                                <button onClick={handleOpenAuditLog} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded font-bold text-xs border border-slate-600">
-                                    Audit Log
-                                </button>
+                                {/* REMOVED Audit Log Button from here */}
                                 <button onClick={() => { setIsAddResultOpen(true); }} className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold text-xs flex items-center gap-1 shadow-lg shadow-green-500/20">
                                     <span className="text-lg leading-none">+</span> Add Result
                                 </button>
@@ -1183,6 +1508,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                                         ))}
                                         {auditStats.winnersList.length === 0 && (
                                             <tr><td colSpan={7} className="p-8 text-center text-slate-500">No winners found yet.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* AUDIT TAB (NEW) */}
+                {activeTab === 'audit' && (
+                    <div className="space-y-6">
+                        <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg p-4">
+                            <div className="flex gap-4 border-b border-slate-700 pb-4 mb-4">
+                                <button onClick={() => setAuditFilter('ALL')} className={`text-sm font-bold pb-2 border-b-2 transition-colors ${auditFilter === 'ALL' ? 'border-neon-cyan text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>All Activity</button>
+                                <button onClick={() => setAuditFilter('FINANCE')} className={`text-sm font-bold pb-2 border-b-2 transition-colors ${auditFilter === 'FINANCE' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>Finance</button>
+                                <button onClick={() => setAuditFilter('RESULTS')} className={`text-sm font-bold pb-2 border-b-2 transition-colors ${auditFilter === 'RESULTS' ? 'border-yellow-500 text-yellow-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>Results</button>
+                                <button onClick={() => setAuditFilter('USERS')} className={`text-sm font-bold pb-2 border-b-2 transition-colors ${auditFilter === 'USERS' ? 'border-green-500 text-green-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}>Users</button>
+                            </div>
+                            
+                            <div className="max-h-[70vh] overflow-y-auto">
+                                <table className="w-full text-sm text-left text-gray-400">
+                                    <thead className="bg-slate-900/50 text-xs uppercase font-bold text-gray-500 sticky top-0">
+                                        <tr>
+                                            <th className="p-3">Timestamp</th>
+                                            <th className="p-3">User</th>
+                                            <th className="p-3">Action</th>
+                                            <th className="p-3">Target ID</th>
+                                            <th className="p-3 w-1/2">Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-700/50">
+                                        {filteredAuditLog.map(log => (
+                                            <tr key={log.id} className="hover:bg-slate-700/20">
+                                                <td className="p-3 font-mono text-xs text-slate-500">{new Date(log.timestamp).toLocaleString()}</td>
+                                                <td className="p-3 font-bold text-white">{log.user}</td>
+                                                <td className="p-3">
+                                                    <span className={`text-[10px] font-bold px-2 py-1 rounded border uppercase ${
+                                                        log.action === 'DELETE' || log.action === 'USER_DELETE' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 
+                                                        log.action === 'UPDATE' || log.action === 'USER_UPDATE' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 
+                                                        log.action === 'FINANCE' || log.action === 'PAYOUT' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 
+                                                        'bg-green-500/10 text-green-400 border-green-500/20'
+                                                    }`}>
+                                                        {log.action}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 font-mono text-xs">{log.targetId}</td>
+                                                <td className="p-3 text-gray-300">{log.details}</td>
+                                            </tr>
+                                        ))}
+                                        {filteredAuditLog.length === 0 && (
+                                            <tr><td colSpan={5} className="p-8 text-center text-slate-600">No logs found for this filter.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -1533,21 +1909,144 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 </div>
             )}
 
-            {isAuditLogOpen && (
-                <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50" onClick={() => setIsAuditLogOpen(false)}>
-                    <div className="bg-slate-800 w-full max-w-3xl h-[80vh] rounded-xl border border-slate-600 shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="p-4 border-b border-slate-700 flex justify-between items-center">
-                            <h3 className="font-bold text-white">System Audit Log</h3>
-                            <button onClick={() => setIsAuditLogOpen(false)} className="text-gray-400 hover:text-white">Close</button>
+            {isUserModalOpen && (
+                <div className="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[100] animate-fade-in" onClick={() => setIsUserModalOpen(false)}>
+                    <div className="bg-slate-800 w-full max-w-2xl rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-900/50 rounded-t-2xl">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                {editingUser ? (
+                                    <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                        Edit User
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-400"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" x2="20" y1="8" y2="14"/><line x1="23" x2="17" y1="11" y2="11"/></svg>
+                                        Create New User
+                                    </>
+                                )}
+                            </h3>
+                            <button onClick={() => setIsUserModalOpen(false)} className="text-gray-400 hover:text-white transition-colors">✕</button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                            {auditLog.length === 0 ? <p className="text-center text-gray-500">No logs found.</p> : auditLog.map((log) => (
-                                <div key={log.id} className="text-xs p-2 border-b border-slate-700/50 flex gap-4">
-                                    <span className="text-slate-500 font-mono whitespace-nowrap">{new Date(log.timestamp).toLocaleString()}</span>
-                                    <span className={`font-bold ${log.action === 'DELETE' ? 'text-red-400' : log.action === 'UPDATE' ? 'text-yellow-400' : 'text-green-400'}`}>{log.action}</span>
-                                    <span className="text-gray-300">{log.details}</span>
+                        
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            <form id="userForm" onSubmit={handleSaveUser}>
+                                {/* Identity Section */}
+                                <div className="space-y-4">
+                                    <h4 className="text-xs uppercase font-bold text-neon-cyan border-b border-slate-700 pb-1 mb-2">Identity</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Full Name</label>
+                                            <input 
+                                                type="text" 
+                                                required 
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-neon-cyan outline-none"
+                                                value={newUserForm.name || ''}
+                                                onChange={e => setNewUserForm({...newUserForm, name: e.target.value})}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Email</label>
+                                            <input 
+                                                type="email" 
+                                                required 
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-neon-cyan outline-none"
+                                                value={newUserForm.email || ''}
+                                                onChange={e => setNewUserForm({...newUserForm, email: e.target.value})}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Role</label>
+                                            <select 
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-neon-cyan outline-none"
+                                                value={newUserForm.role || 'user'}
+                                                onChange={e => setNewUserForm({...newUserForm, role: e.target.value as any})}
+                                            >
+                                                <option value="user">User</option>
+                                                <option value="admin">Admin</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Status</label>
+                                            <select 
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-neon-cyan outline-none"
+                                                value={newUserForm.status || 'active'}
+                                                onChange={e => setNewUserForm({...newUserForm, status: e.target.value as any})}
+                                            >
+                                                <option value="active">Active</option>
+                                                <option value="suspended">Suspended</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
-                            ))}
+
+                                {/* Profile Section */}
+                                <div className="space-y-4 mt-6">
+                                    <h4 className="text-xs uppercase font-bold text-blue-400 border-b border-slate-700 pb-1 mb-2">Profile Details</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Phone</label>
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-blue-400 outline-none"
+                                                value={newUserForm.phone || ''}
+                                                onChange={e => setNewUserForm({...newUserForm, phone: e.target.value})}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Address</label>
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-blue-400 outline-none"
+                                                value={newUserForm.address || ''}
+                                                onChange={e => setNewUserForm({...newUserForm, address: e.target.value})}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Admin Notes</label>
+                                        <textarea 
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-blue-400 outline-none h-20"
+                                            value={newUserForm.notes || ''}
+                                            onChange={e => setNewUserForm({...newUserForm, notes: e.target.value})}
+                                            placeholder="Internal notes about this user..."
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Security Section */}
+                                <div className="space-y-4 mt-6 bg-red-500/5 p-4 rounded-lg border border-red-500/20">
+                                    <h4 className="text-xs uppercase font-bold text-red-400 border-b border-red-500/20 pb-1 mb-2">Security Zone</h4>
+                                    <div>
+                                        <label className="block text-xs uppercase text-gray-500 font-bold mb-1">Set New Password</label>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-white focus:border-red-400 outline-none font-mono"
+                                                placeholder={editingUser ? "Leave blank to keep current" : "Required for new user"}
+                                                value={newUserForm.password || ''}
+                                                onChange={e => setNewUserForm({...newUserForm, password: e.target.value})}
+                                            />
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setNewUserForm({...newUserForm, password: Math.random().toString(36).slice(-8)})}
+                                                className="px-3 py-2 bg-slate-700 text-xs font-bold text-white rounded hover:bg-slate-600"
+                                            >
+                                                Generate
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div className="p-5 border-t border-slate-700 bg-slate-900/50 rounded-b-2xl flex justify-end gap-3">
+                            <button onClick={() => setIsUserModalOpen(false)} className="px-6 py-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold transition-colors">Cancel</button>
+                            <button type="submit" form="userForm" className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-neon-cyan to-blue-600 hover:brightness-110 text-white font-bold shadow-lg transition-transform hover:-translate-y-0.5">
+                                {editingUser ? 'Save Changes' : 'Create User'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1635,6 +2134,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     </div>
                 </div>
             )}
+
+            {/* WALLET MANAGER MODAL */}
+            <WalletManagerModal 
+                isOpen={isWalletOpen} 
+                onClose={() => setIsWalletOpen(false)} 
+                user={selectedUserForWallet} 
+                onSuccess={() => { loadUsersFromDb(); }}
+            />
         </div>
     );
 };

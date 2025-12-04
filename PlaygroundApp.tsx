@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './components/Header';
 import TrackSelector from './components/TrackSelector';
@@ -13,14 +14,17 @@ import CalculatorModal from './components/CalculatorModal';
 import ValidationErrorModal from './components/ValidationErrorModal';
 import { getTodayDateString, calculateRowTotal, fileToBase64, determineGameMode } from './utils/helpers';
 import { interpretTicketImage, interpretNaturalLanguagePlays } from './services/geminiService';
-import type { Play, WizardPlay, ImageInterpretationResult, CopiedWagers, ServerHealth } from './types';
+import type { Play, WizardPlay, ImageInterpretationResult, CopiedWagers, ServerHealth, TicketData } from './types';
 import { MAX_PLAYS } from './constants';
 import { localDbService } from './services/localDbService';
 import { useSound } from './hooks/useSound';
+import { useAuth } from './contexts/AuthContext';
 
 interface PlaygroundAppProps {
     onClose: () => void;
+    onHome?: () => void;
     language: 'en' | 'es' | 'ht';
+    initialTicket?: TicketData | null;
 }
 
 // Storage Keys
@@ -31,7 +35,10 @@ const STORAGE_KEYS = {
     PULITO: 'br_pulito_state'
 };
 
-const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
+const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, onHome, language, initialTicket }) => {
+    // --- AUTH CONTEXT ---
+    const { user } = useAuth();
+
     // --- STATE INITIALIZATION WITH PERSISTENCE ---
     const [plays, setPlays] = useState<Play[]>(() => {
         try {
@@ -61,6 +68,20 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
         } catch (e) { return []; }
     });
     
+    // --- PLAYBACK INITIALIZATION ---
+    useEffect(() => {
+        if (initialTicket) {
+            // Overwrite state with ticket data
+            setPlays(initialTicket.plays);
+            setSelectedTracks(initialTicket.tracks);
+            setSelectedDates(initialTicket.betDates);
+            // Reset others
+            setPulitoPositions([]); // Ticket data doesn't explicitly store pulito pos array, could infer but reset is safer
+            setTicketNumber(''); // New ticket generated from playback
+            setIsTicketConfirmed(false);
+        }
+    }, [initialTicket]);
+
     const [selectedPlayIds, setSelectedPlayIds] = useState<number[]>([]);
     const [lastAddedPlayId, setLastAddedPlayId] = useState<number | null>(null);
     const [copiedWagers, setCopiedWagers] = useState<CopiedWagers | null>(null);
@@ -305,14 +326,24 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
         setIsSaving(true);
         setLastSaveStatus(null);
         
-        // Always save locally first (redundancy)
-        localDbService.saveTicket(ticketData);
+        // --- OPTIMIZATION: Remove Image for DB Storage ---
+        // We create a lightweight payload without the Base64 image string to save space/bandwidth
+        const { ticketImage, ...ticketDataForDb } = ticketData;
+
+        // INJECT USER ID (Or 'guest-session' if null)
+        const finalTicketData = {
+            ...ticketDataForDb,
+            userId: user ? user.id : 'guest-session'
+        };
+
+        // Save locally (redundancy) - also lightweight
+        localDbService.saveTicket(finalTicketData);
 
         try {
             const res = await fetch('/api/tickets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(ticketData)
+                body: JSON.stringify(finalTicketData)
             });
             if (res.ok) {
                 setLastSaveStatus('success');
@@ -346,7 +377,7 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, language }) => {
 
     return (
         <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-gray-900 dark:text-gray-100 flex flex-col transition-colors duration-300">
-            <Header theme={theme} toggleTheme={toggleTheme} onClose={onClose} />
+            <Header theme={theme} toggleTheme={toggleTheme} onClose={onClose} onHome={onHome} />
             
             <main className="flex-grow p-2 sm:p-4 overflow-y-auto space-y-4 max-w-7xl mx-auto w-full">
                 

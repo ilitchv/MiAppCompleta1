@@ -1,56 +1,38 @@
 
 # Active Context
 
-## Estado Actual: PLAN TICOLEPE COMPLETED (STABILIZED)
+## Estado Actual: v5.3 - Admin Power-Up Complete
 
-The application has undergone a critical stabilization phase ("Plan Ticolepe") to correct UX regressions, logic fragmentation, and visualization issues. The system is now in a "Golden State" regarding betting logic and admin reporting.
+**⚠️ INCIDENTE RECIENTE (2024-05-XX):** Se intentó implementar una regla de validación en `PlaygroundApp.tsx` reescribiendo el archivo completo. Esto causó una regresión masiva en la UI.
+**Lección:** Para cambios lógicos en componentes complejos (`PlaygroundApp`), usar ediciones quirúrgicas, NO reescrituras totales.
 
-### 🔒 Core Architectural Decisions (DO NOT CHANGE)
+### 🏆 Logros Consolidados (Funcionando)
+1.  **Admin Power-Up (v5.3):**
+    *   **Audit Hub:** Centro de auditoría centralizado con filtros por tipo (Finanzas, Usuarios, Sistema).
+    *   **Identidad en Ventas:** Visualización de Avatar y Nombre del cliente en la tabla de ventas.
+    *   **Bulk Payouts:** Selección masiva y pago de premios con un solo clic.
+    *   **Auditoría de Usuarios:** Registro automático de creación y edición de usuarios.
+2.  **"New York Horses" como Track:** Ya está visible en selectores y tickets.
+3.  **Seguridad:** Iron Gate y privacidad de tickets implementados.
 
-1.  **Centralized Math ("The No-Guard Policy"):**
-    *   **Architecture:** The `AdminDashboard` **MUST NOT** filter or block plays based on "compatibility" (removed `isCompatible` function).
-    *   **Rule:** All plays + results are sent blindly to `prizeCalculator`.
-    *   **Authority:** The `prizeCalculator` is the **sole source of truth**. It decides if a play wins or loses.
-    *   **Exceptions:** Logic like "Venezuela doesn't pay in Horses" is handled *inside* `prizeCalculator`, not in the UI.
+### 📅 Plan de Ejecución (Priorizado)
 
-2.  **Result Derivation (USA -> General):**
-    *   **Logic:** The system automatically extracts "1st, 2nd, 3rd" positions from USA "Pick 3" and "Pick 4" numbers.
-    *   **Impact:** This allows **Venezuela**, **Palé**, **Pulito**, and **RD-Quiniela** modes to calculate winnings correctly against USA tracks without manual data entry.
+#### 1. FASE 3: Activación de Jerarquía (Referidos)
+*Objetivo: Conectar datos reales de usuarios para preparar el terreno financiero.*
+1.  **Modelo de Datos:** Agregar `sponsorId` al esquema de usuario en `localDbService`.
+2.  **Admin UI:** Agregar selector de "Sponsor" en el modal de Crear/Editar Usuario.
+3.  **ReferralTree:** Conectar el componente visual a la base de datos real (recursividad real).
 
-3.  **Palé Math Dynamics:**
-    *   **Combo Calculation:** NOT a fixed multiplier.
-        *   Mixto-Mixto (e.g., 12-34) = 4 Combinations.
-        *   Mixto-Doble (e.g., 12-22) = 2 Combinations.
-        *   Doble-Doble (e.g., 22-55) = 1 Combination.
+#### 2. FASE 4: Beast Ledger (Economía Segura) - NUEVO
+*Objetivo: Implementar trazabilidad tipo Blockchain para el dinero.*
+1.  **The Mint (Génesis):** Crear funciones que generen tokens SOLO desde depósitos externos o premios validados.
+2.  **Chain of Custody:** Cada transacción guarda el `parentHash` del token origen.
+3.  **Audit View:** Visualizador de trazabilidad en el Admin.
 
-### 🛠️ Implemented Fixes (Ticolepe Manifest)
+#### 3. FASE: Validación de Reglas (Surgical)
+*Objetivo: Bloquear jugadas inválidas sin tocar la UI.*
+1.  **Incompatibilidad Horses/Venezuela:** Insertar validación en `handleGenerateTicket`.
 
-#### 1. UX/UI (Playground)
-*   **Layout:** `TotalDisplay` is positioned **below** the `PlaysTable`.
-*   **Persistence:** `localStorage` saves/restores plays, tracks, dates, and Pulito positions automatically. "Reset All" clears this.
-*   **Reactivity:** Existing plays update their Game Mode automatically if the user toggles "Pulito" or "Venezuela" tracks.
-*   **Ticket Modal:**
-    *   **User Flow:** 2-Step (Preview -> Receipt). Includes auto-download on print.
-    *   **Visual:** Shows thermal ticket strip only.
-
-#### 2. Admin Dashboard (Sales Tab)
-*   **Consolidated View:** Rows are grouped by Play (not duplicated per track).
-*   **Columns:** "Tracks" column is pluralized (e.g., "NY PM, GA Eve").
-*   **Winning Status:**
-    *   **WINNER:** Green badge + Amount (Calculated across all tracks).
-    *   **LOSER:** Red badge (Results exist, $0 win).
-    *   **PENDING:** Yellow badge (Results missing).
-*   **Ticket Modal (Admin Variant):**
-    *   **Dual View:** Thermal Ticket (Left) + Data Table (Right).
-    *   **Live Calc:** Calculates winnings in real-time using the **FULL** database (ignoring dashboard date filters).
-
-### 🧪 Validation Checklist (For Next Session)
-
-When restarting, verify these specific behaviors:
-1.  **Venezuela Win:** Play "Venezuela" in "New York". Result "123-4567". Dashboard MUST show **WINNER** (derived from 23/45/67).
-2.  **Horses Exception:** Play "Venezuela" in "Horses". Result "123". Dashboard MUST show **LOSER ($0)** (Explicit incompatibility).
-3.  **Pulito/Single Action:** Play these modes in "New York". They MUST calculate correctly (No "Pending" false positives).
-4.  **Palé Combo:** Play "12-34" Combo. Cost should be Base * 4. Play "22-55" Combo. Cost should be Base * 1.
-
-### 🎯 Current Focus
-Code is stable. Next steps involve rigorous testing of the points above and proceeding with the Wishlist (once confirmed).
+### 🔒 Core Architectural Decisions
+1.  **Surgical Edits Only:** Prohibido reescribir archivos enteros de UI (>200 líneas) para cambios de lógica simple.
+2.  **Single Source of Truth:** `localDbService` sigue siendo la autoridad.
