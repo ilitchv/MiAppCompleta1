@@ -206,7 +206,8 @@ export const localDbService = {
                         phone: '+1 809-555-0123',
                         address: 'Santo Domingo, DO',
                         createdAt: new Date().toISOString(),
-                        avatarUrl: 'https://ui-avatars.com/api/?name=Demo+Player&background=0D8ABC&color=fff'
+                        avatarUrl: 'https://ui-avatars.com/api/?name=Demo+Player&background=0D8ABC&color=fff',
+                        sponsorId: 'u-admin-01' // Linked to Admin
                     });
                     newUsers.push({
                         id: 'u-admin-01',
@@ -235,7 +236,8 @@ export const localDbService = {
                         phone: '+1 809-555-0001',
                         address: 'Santiago, DO',
                         createdAt: new Date().toISOString(),
-                        avatarUrl: 'https://ui-avatars.com/api/?name=Maria+Perez&background=FF69B4&color=fff'
+                        avatarUrl: 'https://ui-avatars.com/api/?name=Maria+Perez&background=FF69B4&color=fff',
+                        sponsorId: 'u-12345' // Linked to Demo Player
                     });
                     newUsers.push({
                         id: 'u-pedro',
@@ -249,7 +251,8 @@ export const localDbService = {
                         phone: '+1 829-555-0002',
                         address: 'La Romana, DO',
                         createdAt: new Date().toISOString(),
-                        avatarUrl: 'https://ui-avatars.com/api/?name=Pedro+Martinez&background=32CD32&color=fff'
+                        avatarUrl: 'https://ui-avatars.com/api/?name=Pedro+Martinez&background=32CD32&color=fff',
+                        sponsorId: 'u-12345' // Linked to Demo Player
                     });
                 }
 

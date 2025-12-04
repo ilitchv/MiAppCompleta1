@@ -156,4 +156,5 @@ export interface User {
     notes?: string;
     createdAt: string;
     avatarUrl?: string;
+    sponsorId?: string; // NEW: Referral System
 }
