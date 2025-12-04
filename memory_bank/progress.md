@@ -3,7 +3,7 @@
 
 ## Estado Actual de las Características
 
-### Completado (v5.3 - Admin Power-Up)
+### Completado (v5.2 - Admin Power-Up)
 
 -   [x] **Admin Dashboard:**
     -   [x] **Audit Hub:** Pestaña dedicada con filtros y logs detallados.
@@ -16,19 +16,17 @@
 
 ### En Cola de Desarrollo (Pendientes Reales)
 
--   [ ] **Sistema de Referidos (Jerarquía)**
-    -   [ ] Agregar `sponsorId` a User Schema.
-    -   [ ] UI: Asignar Sponsor en Admin.
-    -   [ ] UI: Visualizar Árbol Real en User Dashboard.
+-   [ ] **Reglas de Negocio (Logic Only)**
+    -   [ ] Validación: Bloquear Horses + Venezuela en `handleGenerateTicket`.
+-   [ ] **Sistema de Referidos**
+    -   [ ] Conectar Árbol a Datos Reales.
+    -   [ ] Asignar Sponsor al Crear/Editar Usuario.
 -   [ ] **Beast Ledger (Economía Segura)**
-    -   [ ] Diseño de Hash/Token Schema.
-    -   [ ] Lógica "The Mint" (Creación Génesis).
-    -   [ ] Lógica "Chain" (Herencia de Hash).
-    -   [ ] Admin: Visualizador de Trazabilidad.
--   [ ] **Reglas de Negocio**
-    -   [ ] Validación: Bloquear Horses + Venezuela.
+    -   [ ] Definir Hash Generation (Crypto).
+    -   [ ] Backend: Tabla de Transacciones con ParentHash.
+    -   [ ] Admin: Visualizador de Trazabilidad (Money Genealogy).
 
 ## Problemas Conocidos
 
 1.  **Riesgo de Regresión:** `PlaygroundApp.tsx` es un componente monolítico y frágil. Modificarlo requiere extremo cuidado con el JSX.
-2.  **Persistencia Local:** Al limpiar la caché del navegador, se pierden los logs de auditoría locales.
+2.  **Persistencia Local:** Al limpiar la caché del navegador, se pierden los logs de auditoría locales. (Se solucionará al migrar a Mongo/Firebase).

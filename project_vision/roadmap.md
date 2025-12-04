@@ -36,35 +36,40 @@ Transformar Beast Reader Lotto de una herramienta de gestión de apuestas a una 
 -   **Característica 4.1:** Notificaciones Push para premios.
 -   **Característica 4.2:** Alertas de saldo bajo.
 
-### Módulo 5: Beast Office Command Center (COMPLETADO)
+### Módulo 5: Beast Office Command Center (PRÓXIMA PRIORIDAD)
 
 **Objetivo:** Un panel de administración total para gestionar el ecosistema de usuarios.
 
 -   **Característica 5.1: Gestión de Usuarios (CRUD)**
     -   Crear, Editar y Desactivar usuarios. (Hecho v5.2)
-    -   Audit Logs de cambios de perfil. (Hecho v5.3)
+    -   Resetear contraseñas.
+    -   Editar información de perfil (Teléfono, Dirección).
 
 -   **Característica 5.2: Control Financiero**
-    -   **Gestión de Saldo:** Botones para "Cargar Crédito" y "Debitar". (Hecho v5.2)
-    -   **Pago de Premios:** Liberar saldo retenido de premios. (Hecho v5.3 Bulk Payouts)
+    -   **Gestión de Saldo:** Botones para "Cargar Crédito" (Deposit) y "Debitar/Retirar". (Hecho v5.2)
+    -   **Pago de Premios:** Liberar saldo retenido de premios a saldo disponible. (Hecho v5.2)
 
--   **Característica 5.3: Gestión de Red (Referidos) - PRÓXIMO**
-    -   Visualizar el árbol completo de referidos de la plataforma con datos reales.
+-   **Característica 5.3: Gestión de Red (Referidos)**
+    -   Visualizar el árbol completo de referidos de la plataforma.
     -   **Edición de Jerarquía:** Mover usuarios de un "padre" a otro (re-estructuración de red).
+    -   Generar enlaces de referidos manuales para usuarios.
 
-### Módulo 6: Beast Ledger (Economía Segura & Trazabilidad) - NUEVO
+-   **Característica 5.4: "God Mode" (Soporte)**
+    -   **Ver como Cliente:** Un botón en la lista de usuarios que abre una ventana (o modal) mostrando exactamente lo que ve ese usuario en su Dashboard.
+
+### Módulo 6: Beast Ledger (Economía Segura & Trazabilidad)
 
 **Objetivo:** Garantizar que el dinero dentro del ecosistema sea infalsificable y 100% rastreable mediante criptografía (Hashes).
 
 -   **Concepto Central:** Cada unidad de moneda es un "Token" con un Hash Único.
-    -   **The Mint (La Casa de la Moneda):** Los tokens solo se pueden crear (Genesis Hash) por:
-        1.  **Depósito Externo:** (Stripe, CashApp, Crypto) -> Crea dinero nuevo en el sistema.
-        2.  **Premio Auditado:** (Admin aprueba ticket ganador) -> Convierte "Potencial" en "Saldo Real".
+    -   **Origen Génesis:** Los tokens solo se pueden crear por:
+        1.  **Depósito Externo:** (Stripe, CashApp, Crypto) -> Genera Hash Génesis.
+        2.  **Premio Auditado:** (Admin aprueba premio) -> Genera Hash de Conversión.
     
--   **Característica 6.1: Chain of Custody (Cadena de Custodia)**
-    -   Si un usuario gasta una fracción de sus tokens (ej: apuesta $5 de un depósito de $10), los nuevos tokens resultantes heredan el hash original como "Parent Hash".
-    -   Esto crea un árbol genealógico inmutable para cada centavo. Nadie puede "inyectar" saldo en la base de datos sin romper la cadena de hashes.
+-   **Característica 6.1: Cadena de Custodia (Blockchain-like)**
+    -   Si un usuario gasta una fracción de sus tokens, los nuevos tokens resultantes (el gasto y el cambio) heredan el hash original como "Parent Hash".
+    -   Esto crea un árbol genealógico inmutable para cada centavo.
 
--   **Característica 6.2: The Eye (Visibilidad Total)**
-    -   Herramienta visual para el Admin donde se puede inspeccionar cualquier transacción y ver su origen exacto ("Este dólar vino del depósito #554 de Juan, luego fue ganado por Pedro").
-    -   Registro de identidad: Qué usuario o Admin firmó cada bloque de creación o división.
+-   **Característica 6.2: Panel de Auditoría de Trazabilidad**
+    -   Herramienta visual para el Admin donde se puede inspeccionar cualquier saldo y ver su origen exacto ("Este dólar vino del depósito #554 de Juan").
+    -   Registro de identidad: Qué usuario o Admin inició cada evento de creación o división.
