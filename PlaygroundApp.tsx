@@ -306,6 +306,11 @@ const PlaygroundApp: React.FC<PlaygroundAppProps> = ({ onClose, onHome, language
                 errors.push(`Play #${idx + 1}: "Pick 2" is a temporary mode. Please select 'Venezuela' or 'Pulito' track to define the specific game type.`);
             }
         });
+
+        // 4. Horses vs Venezuela Incompatibility Check
+        if (selectedTracks.includes('New York Horses') && plays.some(p => p.gameMode === 'Venezuela')) {
+            errors.push("Error: El track 'New York Horses' no admite jugadas tipo 'Venezuela'. Por favor elimine las jugadas de Venezuela o deseleccione Horses.");
+        }
         
         if (validPlays.length === 0 && plays.length > 0) errors.push("No valid plays found (check amounts or bet numbers).");
 
