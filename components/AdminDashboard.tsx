@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { TicketData, WinningResult, PrizeTable, CalculationResult, AuditLogEntry, Play, User } from '../types';
 import { localDbService } from '../services/localDbService';
@@ -282,7 +281,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 
                 const winningTracks: string[] = [];
 
-                t.tracks.forEach(track => {
+                // SURGICAL FIX: Filter out "Pulito" and "Venezuela" from effective tracks
+                // This prevents them from causing a "Pending" status when they are just game modes
+                const effectiveTracks = t.tracks.filter(tr => !['Pulito', 'Venezuela'].includes(tr));
+
+                effectiveTracks.forEach(track => {
                     let trackWin = 0;
                     let trackPending = false;
 
@@ -319,18 +322,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                     color = 'text-green-400';
                     bg = 'bg-green-500/20';
                 } else if (!isPending) {
-                    status = 'LOSER';
-                    color = 'text-red-400';
-                    bg = 'bg-red-500/20';
+                    // SURGICAL FIX: Aesthetics for non-winners
+                    status = 'NO MATCH';
+                    color = 'text-slate-400';
+                    bg = 'bg-slate-700/50';
                 }
 
                 // Payment Status from Data
                 const isPaid = play.paymentStatus === 'paid';
                 const key = `${t.ticketNumber}_${index}`;
 
+                // SURGICAL FIX: Use effectiveTracks for display so "Pulito" doesn't clutter the view
                 const displayTracks = isWinner 
                     ? winningTracks.join(', ') 
-                    : t.tracks.join(', ');
+                    : effectiveTracks.join(', ');
 
                 return {
                     ...play,
