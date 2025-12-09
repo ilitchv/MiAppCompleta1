@@ -87,7 +87,7 @@ export interface WinningResult {
 export interface AuditLogEntry {
     id: string;
     timestamp: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'FINANCE' | 'PAYOUT' | 'USER_CREATE' | 'USER_UPDATE' | 'USER_DELETE';
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'FINANCE' | 'PAYOUT' | 'USER_CREATE' | 'USER_UPDATE' | 'USER_DELETE' | 'USER_APPROVE' | 'USER_REJECT';
     targetId: string; // The ID of the result/user affected
     details: string; // Description
     user: string; // Usually 'Admin'
@@ -148,7 +148,7 @@ export interface User {
     password?: string; // Only used for mock auth/reset
     name: string;
     role: 'admin' | 'user';
-    status: 'active' | 'suspended';
+    status: 'active' | 'suspended' | 'pending';
     balance: number;
     pendingBalance: number;
     phone?: string;
